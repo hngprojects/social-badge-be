@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import PostgresDsn, RedisDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -18,6 +19,17 @@ class Settings(BaseSettings):
     DATABASE_URL: PostgresDsn
     REDIS_URL: RedisDsn = "redis://localhost:6379/0"  # type: ignore[assignment]
     VERIFICATION_TOKEN_TTL_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    SECRET_KEY: str = ""
+    ALGORITHM: str = "HS256"
+
+    COOKIE_SECURE: bool = False
+    COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
+    REFRESH_COOKIE: str = "refresh_token"
+
+    MAX_LOGIN_ATTEMPTS: int = 5
+    LOCKOUT_WINDOW: int = 900  # 15 minutes in seconds
 
     RESEND_API_KEY: str = "re_dummy_api_key"
     RESEND_FROM_EMAIL: str = "noreply@yourdomain.com"

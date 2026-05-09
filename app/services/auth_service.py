@@ -11,7 +11,7 @@ from app.core.exceptions import (
     EmailNotVerifiedError,
     InvalidCredentialsError,
 )
-from app.core.security import hash_password
+from app.core.security import hash_password, verify_password
 from app.core.token import (
     create_access_token,
     create_refresh_token,
@@ -88,9 +88,7 @@ async def signin(
 
         raise InvalidCredentialsError
 
-    password_hash = hash_password(payload.password)
-
-    if password_hash != existing_user.password_hash:
+    if not verify_password(payload.password, existing_user.password_hash or ""):
         attempts = await increment_failed_attempts(redis, payload.email)
 
         if attempts >= settings.MAX_LOGIN_ATTEMPTS:

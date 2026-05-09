@@ -89,7 +89,7 @@ async def register(
 
 @router.post(
     "/login",
-    response_model=SuccessResponse[UserResponse],
+    response_model=SuccessResponse[LoginResponse],
     status_code=status.HTTP_200_OK,
     summary="Login an existing user",
     description=(

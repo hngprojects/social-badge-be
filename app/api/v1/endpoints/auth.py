@@ -9,9 +9,9 @@ from app.core.rate_limit import limiter
 from app.schemas.auth import ForgotPasswordRequest, SignupRequest, UserResponse
 from app.schemas.response import ErrorResponse, SuccessResponse
 from app.services.auth_service import (
-    request_password_reset,
     authenticate_with_google,
     build_google_auth_url,
+    request_password_reset,
     signup,
 )
 

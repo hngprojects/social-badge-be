@@ -14,10 +14,10 @@ from app.models.user import User
 from app.schemas.auth import ForgotPasswordRequest, SignupRequest
 from app.services.auth_service import (
     _exchange_google_code,
-    request_password_reset,
     _fetch_google_userinfo,
     authenticate_with_google,
     build_google_auth_url,
+    request_password_reset,
     signup,
 )
 

@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = "re_dummy_api_key"
     RESEND_FROM_EMAIL: str = "noreply@yourdomain.com"
     FRONTEND_URL: str = "https://localhost:5173"
+    PASSWORD_RESET_TOKEN_TTL_MINUTES: int = 30
 
 
 @lru_cache

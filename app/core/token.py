@@ -6,6 +6,7 @@ from redis.asyncio import Redis
 from app.core.config import settings
 
 TOKEN_PREFIX = "verify:"  # noqa: S105
+GOOGLE_STATE_PREFIX = "oauth:google:state:"
 
 
 def generate_token() -> tuple[str, str]:
@@ -49,3 +50,18 @@ async def get_verified_user_id(
         await redis.delete(key)
         return str(user_id)
     return None
+
+
+async def store_google_oauth_state(redis: Redis, state: str) -> None:
+    ttl_seconds = settings.GOOGLE_OAUTH_STATE_TTL_MINUTES * 60
+    await redis.set(f"{GOOGLE_STATE_PREFIX}{state}", "1", ex=ttl_seconds)
+
+
+async def get_google_oauth_state(redis: Redis, state: str) -> bool:
+    key = f"{GOOGLE_STATE_PREFIX}{state}"
+    stored = await redis.get(key)
+    if stored is None:
+        return False
+
+    await redis.delete(key)
+    return True

@@ -1,9 +1,12 @@
+import uuid
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
 
-from app.core.exceptions import EmailDeliveryError
+from app.core.exceptions import EmailDeliveryError, GoogleOAuthError
+from app.models.user import User
 
 
 @pytest.fixture
@@ -88,3 +91,54 @@ async def test_signup_endpoint_rate_limit(
     data = response.json()
     assert data["status"] == "error"
     assert data["message"] == "Rate limit exceeded"
+
+
+async def test_google_login_redirects_to_google(client: AsyncClient) -> None:
+    response = await client.get("/api/v1/auth/google", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert "accounts.google.com" in response.headers["location"]
+
+
+@patch("app.api.v1.endpoints.auth.authenticate_with_google", new_callable=AsyncMock)
+async def test_google_callback_success(
+    mock_authenticate: AsyncMock, client: AsyncClient
+) -> None:
+    user = User(
+        id=uuid.uuid4(),
+        name="Google User",
+        email="google@example.com",
+        is_email_verified=True,
+        profile_photo_url="https://example.com/photo.jpg",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    mock_authenticate.return_value = (user, False)
+
+    response = await client.get(
+        "/api/v1/auth/google/callback?code=test-code&state=test-state"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["message"] == "Google authentication successful."
+    assert data["data"]["email"] == "google@example.com"
+
+
+@patch("app.api.v1.endpoints.auth.authenticate_with_google", new_callable=AsyncMock)
+async def test_google_callback_returns_error_response(
+    mock_authenticate: AsyncMock, client: AsyncClient
+) -> None:
+    mock_authenticate.side_effect = GoogleOAuthError(
+        "Invalid or expired Google OAuth state"
+    )
+
+    response = await client.get(
+        "/api/v1/auth/google/callback?code=test-code&state=test-state"
+    )
+
+    assert response.status_code == 400
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["message"] == "Invalid or expired Google OAuth state"

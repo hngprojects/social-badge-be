@@ -1,6 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from httpx import AsyncClient
@@ -97,7 +98,18 @@ async def test_google_login_redirects_to_google(client: AsyncClient) -> None:
     response = await client.get("/api/v1/auth/google", follow_redirects=False)
 
     assert response.status_code == 307
-    assert "accounts.google.com" in response.headers["location"]
+    redirect_url = response.headers["location"]
+    parsed = urlparse(redirect_url)
+    query = parse_qs(parsed.query)
+
+    assert parsed.netloc == "accounts.google.com"
+    assert parsed.path == "/o/oauth2/v2/auth"
+    assert query["response_type"] == ["code"]
+    assert query["client_id"]
+    assert query["redirect_uri"]
+    assert query["scope"]
+    assert query["state"]
+    assert query["state"][0]
 
 
 @patch("app.api.v1.endpoints.auth.authenticate_with_google", new_callable=AsyncMock)

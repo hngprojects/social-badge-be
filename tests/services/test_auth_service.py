@@ -1,5 +1,6 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from fakeredis import FakeAsyncRedis
 from sqlalchemy import select
@@ -12,6 +13,8 @@ from app.models.auth_provider import AuthProvider
 from app.models.user import User
 from app.schemas.auth import SignupRequest
 from app.services.auth_service import (
+    _exchange_google_code,
+    _fetch_google_userinfo,
     authenticate_with_google,
     build_google_auth_url,
     signup,
@@ -144,6 +147,7 @@ async def test_authenticate_with_google_creates_new_user(
     await store_google_oauth_state(fake_redis, "valid-state")
     mock_exchange.return_value = {"access_token": "token"}
     mock_userinfo.return_value = {
+        "sub": "google-sub-new-user",
         "email": "google@example.com",
         "name": "Google User",
         "picture": "https://example.com/photo.jpg",
@@ -164,6 +168,7 @@ async def test_authenticate_with_google_creates_new_user(
     provider = provider_result.scalars().first()
     assert provider is not None
     assert provider.provider == "google"
+    assert provider.provider_user_id == "google-sub-new-user"
 
 
 @patch("app.services.auth_service._fetch_google_userinfo", new_callable=AsyncMock)
@@ -177,7 +182,7 @@ async def test_authenticate_with_google_links_existing_user(
     existing_user = User(
         name="Existing User",
         email="existing@example.com",
-        is_email_verified=False,
+        is_email_verified=True,
     )
     db_session.add(existing_user)
     await db_session.commit()
@@ -186,6 +191,7 @@ async def test_authenticate_with_google_links_existing_user(
     await store_google_oauth_state(fake_redis, "valid-state")
     mock_exchange.return_value = {"access_token": "token"}
     mock_userinfo.return_value = {
+        "sub": "google-sub-existing-user",
         "email": "existing@example.com",
         "name": "Existing User",
         "picture": "https://example.com/google-photo.jpg",
@@ -208,6 +214,96 @@ async def test_authenticate_with_google_links_existing_user(
     )
     provider = provider_result.scalars().first()
     assert provider is not None
+    assert provider.provider_user_id == "google-sub-existing-user"
+
+
+@patch("app.services.auth_service._fetch_google_userinfo", new_callable=AsyncMock)
+@patch("app.services.auth_service._exchange_google_code", new_callable=AsyncMock)
+async def test_authenticate_with_google_rejects_unverified_password_account(
+    mock_exchange: AsyncMock,
+    mock_userinfo: AsyncMock,
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    existing_user = User(
+        name="Hijacked User",
+        email="victim@example.com",
+        password_hash="hashed-password",  # noqa: S106
+        is_email_verified=False,
+    )
+    db_session.add(existing_user)
+    await db_session.commit()
+
+    await store_google_oauth_state(fake_redis, "valid-state")
+    mock_exchange.return_value = {"access_token": "token"}
+    mock_userinfo.return_value = {
+        "sub": "google-sub-victim",
+        "email": "victim@example.com",
+        "name": "Victim User",
+        "picture": "https://example.com/victim.jpg",
+    }
+
+    with pytest.raises(
+        GoogleOAuthError,
+        match="An unverified password account already exists for this email",
+    ) as exc_info:
+        await authenticate_with_google(
+            db_session, fake_redis, "auth-code", "valid-state"
+        )
+
+    assert exc_info.value.status_code == 409
+
+    provider_result = await db_session.execute(
+        select(AuthProvider).where(
+            AuthProvider.user_id == existing_user.id,
+            AuthProvider.provider == "google",
+        )
+    )
+    provider = provider_result.scalars().first()
+    assert provider is None
+
+
+@patch("app.services.auth_service._fetch_google_userinfo", new_callable=AsyncMock)
+@patch("app.services.auth_service._exchange_google_code", new_callable=AsyncMock)
+async def test_authenticate_with_google_prefers_existing_google_subject_link(
+    mock_exchange: AsyncMock,
+    mock_userinfo: AsyncMock,
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    existing_user = User(
+        name="Linked User",
+        email="linked@example.com",
+        is_email_verified=True,
+    )
+    db_session.add(existing_user)
+    await db_session.flush()
+    db_session.add(
+        AuthProvider(
+            provider="google",
+            provider_user_id="google-linked-subject",
+            user_id=existing_user.id,
+            label="Google",
+        )
+    )
+    await db_session.commit()
+    await db_session.refresh(existing_user)
+
+    await store_google_oauth_state(fake_redis, "valid-state")
+    mock_exchange.return_value = {"access_token": "token"}
+    mock_userinfo.return_value = {
+        "sub": "google-linked-subject",
+        "email": "linked@example.com",
+        "name": "Linked User",
+        "picture": "https://example.com/linked.jpg",
+    }
+
+    user, is_new_user = await authenticate_with_google(
+        db_session, fake_redis, "auth-code", "valid-state"
+    )
+
+    assert is_new_user is False
+    assert user.id == existing_user.id
 
 
 async def test_authenticate_with_google_rejects_invalid_state(
@@ -216,3 +312,164 @@ async def test_authenticate_with_google_rejects_invalid_state(
 ) -> None:
     with pytest.raises(GoogleOAuthError, match="Invalid or expired Google OAuth state"):
         await authenticate_with_google(db_session, fake_redis, "auth-code", "missing")
+
+
+@patch("app.services.auth_service._exchange_google_code", new_callable=AsyncMock)
+async def test_authenticate_with_google_propagates_userinfo_errors(
+    mock_exchange: AsyncMock,
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    await store_google_oauth_state(fake_redis, "valid-state")
+    mock_exchange.return_value = {"access_token": "token"}
+
+    with patch(
+        "app.services.auth_service._fetch_google_userinfo",
+        new_callable=AsyncMock,
+        side_effect=GoogleOAuthError("Google account email is not verified"),
+    ):
+        with pytest.raises(
+            GoogleOAuthError, match="Google account email is not verified"
+        ):
+            await authenticate_with_google(
+                db_session, fake_redis, "auth-code", "valid-state"
+            )
+
+
+@patch("app.services.auth_service._fetch_google_userinfo", new_callable=AsyncMock)
+@patch("app.services.auth_service._exchange_google_code", new_callable=AsyncMock)
+async def test_authenticate_with_google_propagates_token_exchange_errors(
+    mock_exchange: AsyncMock,
+    mock_userinfo: AsyncMock,
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    await store_google_oauth_state(fake_redis, "valid-state")
+    mock_exchange.side_effect = GoogleOAuthError(
+        "Google token exchange failed", status_code=401
+    )
+
+    with pytest.raises(GoogleOAuthError, match="Google token exchange failed") as exc:
+        await authenticate_with_google(
+            db_session, fake_redis, "auth-code", "valid-state"
+        )
+
+    assert exc.value.status_code == 401
+    mock_userinfo.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_message"),
+    [
+        (
+            {
+                "sub": "google-sub",
+                "email": "user@example.com",
+                "email_verified": False,
+                "name": "User",
+            },
+            "Google account email is not verified",
+        ),
+        (
+            {
+                "sub": "google-sub",
+                "email": "user@example.com",
+                "name": "User",
+            },
+            "Google account email is not verified",
+        ),
+        (
+            {
+                "sub": "google-sub",
+                "email": "",
+                "email_verified": True,
+                "name": "User",
+            },
+            "Google account did not provide an email address",
+        ),
+        (
+            {
+                "sub": "google-sub",
+                "email_verified": True,
+                "name": "User",
+            },
+            "Google account did not provide an email address",
+        ),
+        (
+            {
+                "sub": "google-sub",
+                "email": "user@example.com",
+                "email_verified": True,
+                "name": "",
+            },
+            "Google account did not provide a valid display name",
+        ),
+        (
+            {
+                "sub": "google-sub",
+                "email": "user@example.com",
+                "email_verified": True,
+            },
+            "Google account did not provide a valid display name",
+        ),
+    ],
+)
+async def test_fetch_google_userinfo_rejects_invalid_payloads(
+    payload: dict[str, object],
+    expected_message: str,
+) -> None:
+    mock_response = MagicMock()
+    mock_response.raise_for_status.return_value = None
+    mock_response.json.return_value = payload
+
+    with patch(
+        "app.services.auth_service.httpx.AsyncClient.get",
+        new_callable=AsyncMock,
+        return_value=mock_response,
+    ):
+        with pytest.raises(GoogleOAuthError, match=expected_message):
+            await _fetch_google_userinfo("token")
+
+
+async def test_exchange_google_code_maps_http_status_error() -> None:
+    request = httpx.Request("POST", "https://oauth2.googleapis.com/token")
+    response = httpx.Response(status_code=401, request=request)
+    status_error = httpx.HTTPStatusError(
+        "Unauthorized",
+        request=request,
+        response=response,
+    )
+
+    with patch(
+        "app.services.auth_service.httpx.AsyncClient.post",
+        new_callable=AsyncMock,
+        side_effect=status_error,
+    ):
+        with pytest.raises(
+            GoogleOAuthError, match="Google token exchange failed"
+        ) as exc:
+            await _exchange_google_code("bad-code")
+
+    assert exc.value.status_code == 401
+
+
+async def test_fetch_google_userinfo_maps_http_status_error() -> None:
+    request = httpx.Request("GET", "https://www.googleapis.com/oauth2/v3/userinfo")
+    response = httpx.Response(status_code=403, request=request)
+    status_error = httpx.HTTPStatusError(
+        "Forbidden",
+        request=request,
+        response=response,
+    )
+
+    with patch(
+        "app.services.auth_service.httpx.AsyncClient.get",
+        new_callable=AsyncMock,
+        side_effect=status_error,
+    ):
+        with pytest.raises(
+            GoogleOAuthError, match="Google user info lookup failed"
+        ) as exc:
+            await _fetch_google_userinfo("bad-token")
+
+    assert exc.value.status_code == 403

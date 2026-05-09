@@ -144,7 +144,7 @@ async def forgot_password(
 async def verify_email(
     session: DBSession,
     redis: RedisClient,
-    payload: VerifyEmailRequest = Depends(),
+    payload: VerifyEmailRequest,
 ) -> Any:
     token_key = f"verification_token:{payload.token}"
     user_id = await redis.getdel(token_key)

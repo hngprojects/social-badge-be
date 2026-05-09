@@ -4,6 +4,15 @@ Backend API for the Social Badge platform — built with FastAPI, async SQLAlche
 
 ---
 
+## Current Features
+
+- **Authentication System**: Secure signup flow with email verification support, robust password hashing using bcrypt, and strict input validation.
+- **Rate Limiting**: Integrated `slowapi` to protect critical endpoints (like signup) from spam and abuse.
+- **Global Error Handling**: Standardized success and error response schemas universally across all endpoints for frontend consumption.
+- **Testing**: Comprehensive `pytest` suite ensuring full coverage of business logic with mocked dependencies (`fakeredis`, overridden async sessions).
+
+---
+
 ## Stack
 
 | Layer                | Choice                                            |
@@ -76,7 +85,9 @@ social-badge-be/
 
 - Python 3.13+
 - [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
-- A running Postgres instance (local, Docker, or remote)
+- **PostgreSQL**: A running instance (local, Docker, or remote) for primary relational data.
+- **Redis**: A running instance for rate limiting (`slowapi`) and token storage.
+- **Resend**: An API key from [Resend](https://resend.com) for dispatching transactional emails.
 
 ### 2a. Install
 
@@ -100,10 +111,13 @@ This installs git hooks that run `ruff check --fix` and `ruff format` on every c
 cp .env.example .env
 ```
 
-Edit `.env` and set `DATABASE_URL`. The driver **must** be `postgresql+asyncpg`:
+Edit `.env` and set the required variables. The database driver **must** be `postgresql+asyncpg`:
 
 ```env
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/fastapi_starter
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/social_badge
+REDIS_URL=redis://localhost:6379/0
+RESEND_API_KEY=re_your_api_key_here
+RESEND_FROM_EMAIL=noreply@yourdomain.com
 ```
 
 ### 4. Create the database

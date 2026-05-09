@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import PostgresDsn
+from pydantic import PostgresDsn, RedisDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
 
     DATABASE_URL: PostgresDsn
+    REDIS_URL: RedisDsn = "redis://localhost:6379/0"  # type: ignore[assignment]
+    VERIFICATION_TOKEN_TTL_MINUTES: int = 30
+
+    RESEND_API_KEY: str = "re_dummy_api_key"
+    RESEND_FROM_EMAIL: str = "noreply@yourdomain.com"
+    FRONTEND_URL: str = "https://localhost:5173"
 
 
 @lru_cache

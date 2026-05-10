@@ -168,6 +168,7 @@ async def test_login_success_sets_httponly_cookie(
     response = await client.post("/api/v1/auth/login", json=verified_login_user)
     assert response.status_code == 200
     assert settings.REFRESH_COOKIE in response.cookies
+    assert "HttpOnly" in response.headers["set-cookie"]
 
 
 async def test_login_wrong_password_returns_401(

@@ -37,8 +37,16 @@ components:
   schemas:
     SignupRequest:
       type: object
-      required: [email, password]
+      required: [First name, email, password]
       properties:
+        first_name:
+          type: 
+          description: Organiser's first name (required)
+          example: John
+        last_name:
+          type: string
+          description: Organiser's last name (optional)
+          example: Doe
         email:
           type: string
           format: email
@@ -66,7 +74,7 @@ components:
       properties:
         id_token:
           type: string
-          description: Google OAuth2 ID token from the client-side Google Sign-In flow
+          description: Google OAuth2 ID token from the client-side Google Sign-In flow.
           example: eyJhbGciOiJSUzI1NiIsImtpZCI6...
 
     AuthResponse:
@@ -88,6 +96,14 @@ components:
           type: string
           format: uuid
           example: 123e4567-e89b-12d3-a456-426614174000
+        first_name:
+          type: string
+          example: John
+        last_name:
+          type: string
+          nullable: true
+          description: Optional — may be null if not provided at signup or via Google.
+          example: Doe
         email:
           type: string
           format: email

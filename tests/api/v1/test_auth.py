@@ -1,6 +1,6 @@
 import uuid
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -167,12 +167,15 @@ async def test_google_login_redirects_to_google(client: AsyncClient) -> None:
     parsed = urlparse(redirect_url)
     query = parse_qs(parsed.query)
 
+    assert parsed.scheme == "https"
     assert parsed.netloc == "accounts.google.com"
     assert parsed.path == "/o/oauth2/v2/auth"
     assert query["response_type"] == ["code"]
     assert query["client_id"]
     assert query["redirect_uri"]
     assert query["scope"]
+    assert query["access_type"] == ["offline"]
+    assert query["prompt"] == ["consent"]
     assert query["state"]
     assert query["state"][0]
 
@@ -201,6 +204,12 @@ async def test_google_callback_success(
     assert data["status"] == "success"
     assert data["message"] == "Google authentication successful."
     assert data["data"]["email"] == "google@example.com"
+    mock_authenticate.assert_awaited_once_with(
+        ANY,
+        ANY,
+        "test-code",
+        "test-state",
+    )
 
 
 @patch("app.api.v1.endpoints.auth.authenticate_with_google", new_callable=AsyncMock)
@@ -219,3 +228,9 @@ async def test_google_callback_returns_error_response(
     data = response.json()
     assert data["status"] == "error"
     assert data["message"] == "Invalid or expired Google OAuth state"
+    mock_authenticate.assert_awaited_once_with(
+        ANY,
+        ANY,
+        "test-code",
+        "test-state",
+    )

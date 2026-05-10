@@ -14,7 +14,9 @@ from app.models.user import User
 from app.schemas.auth import ForgotPasswordRequest, SignupRequest
 from app.services.auth_service import (
     _exchange_google_code,
+    _extract_google_id_token_subject,
     _fetch_google_userinfo,
+    _validate_google_subject_consistency,
     authenticate_with_google,
     build_google_auth_url,
     request_password_reset,
@@ -221,7 +223,10 @@ async def test_authenticate_with_google_creates_new_user(
     fake_redis: FakeAsyncRedis,
 ) -> None:
     await store_google_oauth_state(fake_redis, "valid-state")
-    mock_exchange.return_value = {"access_token": "token"}
+    mock_exchange.return_value = {
+        "access_token": "token",
+        "id_token": "header.eyJzdWIiOiAiZ29vZ2xlLXN1Yi1uZXctdXNlciJ9.signature",
+    }
     mock_userinfo.return_value = {
         "sub": "google-sub-new-user",
         "email": "google@example.com",
@@ -265,7 +270,14 @@ async def test_authenticate_with_google_links_existing_user(
     await db_session.refresh(existing_user)
 
     await store_google_oauth_state(fake_redis, "valid-state")
-    mock_exchange.return_value = {"access_token": "token"}
+    mock_exchange.return_value = {
+        "access_token": "token",
+        "id_token": (
+            "header."
+            "eyJzdWIiOiAiZ29vZ2xlLXN1Yi1leGlzdGluZy11c2VyIn0."
+            "signature"
+        ),
+    }
     mock_userinfo.return_value = {
         "sub": "google-sub-existing-user",
         "email": "existing@example.com",
@@ -311,7 +323,10 @@ async def test_authenticate_with_google_rejects_unverified_password_account(
     await db_session.commit()
 
     await store_google_oauth_state(fake_redis, "valid-state")
-    mock_exchange.return_value = {"access_token": "token"}
+    mock_exchange.return_value = {
+        "access_token": "token",
+        "id_token": "header.eyJzdWIiOiAiZ29vZ2xlLXN1Yi12aWN0aW0ifQ.signature",
+    }
     mock_userinfo.return_value = {
         "sub": "google-sub-victim",
         "email": "victim@example.com",
@@ -366,7 +381,12 @@ async def test_authenticate_with_google_prefers_existing_google_subject_link(
     await db_session.refresh(existing_user)
 
     await store_google_oauth_state(fake_redis, "valid-state")
-    mock_exchange.return_value = {"access_token": "token"}
+    mock_exchange.return_value = {
+        "access_token": "token",
+        "id_token": (
+            "header.eyJzdWIiOiAiZ29vZ2xlLWxpbmtlZC1zdWJqZWN0In0.signature"
+        ),
+    }
     mock_userinfo.return_value = {
         "sub": "google-linked-subject",
         "email": "linked@example.com",
@@ -397,7 +417,7 @@ async def test_authenticate_with_google_propagates_userinfo_errors(
     fake_redis: FakeAsyncRedis,
 ) -> None:
     await store_google_oauth_state(fake_redis, "valid-state")
-    mock_exchange.return_value = {"access_token": "token"}
+    mock_exchange.return_value = {"access_token": "token", "id_token": None}
 
     with patch(
         "app.services.auth_service._fetch_google_userinfo",
@@ -432,6 +452,35 @@ async def test_authenticate_with_google_propagates_token_exchange_errors(
 
     assert exc.value.status_code == 401
     mock_userinfo.assert_not_called()
+
+
+@patch("app.services.auth_service._fetch_google_userinfo", new_callable=AsyncMock)
+@patch("app.services.auth_service._exchange_google_code", new_callable=AsyncMock)
+async def test_authenticate_with_google_rejects_mismatched_id_token_subject(
+    mock_exchange: AsyncMock,
+    mock_userinfo: AsyncMock,
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    await store_google_oauth_state(fake_redis, "valid-state")
+    mock_exchange.return_value = {
+        "access_token": "token",
+        "id_token": "header.eyJzdWIiOiAib25lLXN1YiJ9.signature",
+    }
+    mock_userinfo.return_value = {
+        "sub": "different-sub",
+        "email": "google@example.com",
+        "name": "Google User",
+        "picture": "https://example.com/photo.jpg",
+    }
+
+    with pytest.raises(
+        GoogleOAuthError,
+        match="Google token subject did not match the user info response",
+    ):
+        await authenticate_with_google(
+            db_session, fake_redis, "auth-code", "valid-state"
+        )
 
 
 @pytest.mark.parametrize(
@@ -529,6 +578,99 @@ async def test_exchange_google_code_maps_http_status_error() -> None:
     assert exc.value.status_code == 401
 
 
+async def test_exchange_google_code_maps_transport_error() -> None:
+    with patch(
+        "app.services.auth_service.httpx.AsyncClient.post",
+        new_callable=AsyncMock,
+        side_effect=httpx.ConnectError("network down"),
+    ):
+        with pytest.raises(
+            GoogleOAuthError, match="Could not reach Google token endpoint"
+        ) as exc:
+            await _exchange_google_code("bad-code")
+
+    assert exc.value.status_code == 502
+
+
+async def test_exchange_google_code_returns_optional_id_token() -> None:
+    mock_response = MagicMock()
+    mock_response.raise_for_status.return_value = None
+    mock_response.json.return_value = {
+        "access_token": "access-token",
+        "id_token": "header.payload.signature",
+    }
+
+    with patch(
+        "app.services.auth_service.httpx.AsyncClient.post",
+        new_callable=AsyncMock,
+        return_value=mock_response,
+    ):
+        payload = await _exchange_google_code("auth-code")
+
+    assert payload == {
+        "access_token": "access-token",
+        "id_token": "header.payload.signature",
+    }
+
+
+async def test_exchange_google_code_rejects_invalid_id_token_type() -> None:
+    mock_response = MagicMock()
+    mock_response.raise_for_status.return_value = None
+    mock_response.json.return_value = {
+        "access_token": "access-token",
+        "id_token": 123,
+    }
+
+    with patch(
+        "app.services.auth_service.httpx.AsyncClient.post",
+        new_callable=AsyncMock,
+        return_value=mock_response,
+    ):
+        with pytest.raises(
+            GoogleOAuthError, match="Google token response included an invalid ID token"
+        ):
+            await _exchange_google_code("auth-code")
+
+
+@pytest.mark.parametrize(
+    ("id_token", "expected_message"),
+    [
+        ("not-a-jwt", "Google token response included a malformed ID token"),
+        (
+            "header.e30.signature",
+            "Google token response did not include a valid subject",
+        ),
+    ],
+)
+def test_extract_google_id_token_subject_rejects_invalid_tokens(
+    id_token: str, expected_message: str
+) -> None:
+    with pytest.raises(GoogleOAuthError, match=expected_message):
+        _extract_google_id_token_subject(id_token)
+
+
+def test_validate_google_subject_consistency_accepts_missing_id_token() -> None:
+    _validate_google_subject_consistency(None, "userinfo-sub")
+
+
+def test_validate_google_subject_consistency_accepts_matching_subjects() -> None:
+    _validate_google_subject_consistency(
+        "header.eyJzdWIiOiAidXNlcmluZm8tc3ViIn0.signature",
+        "userinfo-sub",
+    )
+
+
+def test_validate_google_subject_consistency_rejects_mismatch() -> None:
+    with pytest.raises(
+        GoogleOAuthError,
+        match="Google token subject did not match the user info response",
+    ):
+        _validate_google_subject_consistency(
+            "header.eyJzdWIiOiAib25lLXN1YiJ9.signature",
+            "different-sub",
+        )
+
+
 async def test_fetch_google_userinfo_maps_http_status_error() -> None:
     request = httpx.Request("GET", "https://www.googleapis.com/oauth2/v3/userinfo")
     response = httpx.Response(status_code=403, request=request)
@@ -549,3 +691,17 @@ async def test_fetch_google_userinfo_maps_http_status_error() -> None:
             await _fetch_google_userinfo("bad-token")
 
     assert exc.value.status_code == 403
+
+
+async def test_fetch_google_userinfo_maps_transport_error() -> None:
+    with patch(
+        "app.services.auth_service.httpx.AsyncClient.get",
+        new_callable=AsyncMock,
+        side_effect=httpx.ConnectError("network down"),
+    ):
+        with pytest.raises(
+            GoogleOAuthError, match="Could not reach Google user info endpoint"
+        ) as exc:
+            await _fetch_google_userinfo("bad-token")
+
+    assert exc.value.status_code == 502

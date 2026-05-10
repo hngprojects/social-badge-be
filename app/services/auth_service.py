@@ -1,4 +1,7 @@
 import asyncio
+import base64
+import binascii
+import json
 import logging
 from urllib.parse import urlencode
 
@@ -142,12 +145,15 @@ async def authenticate_with_google(
         raise GoogleOAuthError("Invalid or expired Google OAuth state")
 
     token_payload = await _exchange_google_code(code)
-    user_info = await _fetch_google_userinfo(token_payload["access_token"])
+    user_info = await _fetch_google_userinfo(token_payload["access_token"])  # type: ignore
+    _validate_google_subject_consistency(
+        token_payload.get("id_token"), user_info["sub"]
+    )
     user, is_new_user = await _upsert_google_user(session, user_info)
     return user, is_new_user
 
 
-async def _exchange_google_code(code: str) -> dict[str, str]:
+async def _exchange_google_code(code: str) -> dict[str, str | None]:
     """
     Exchanges the authorization code for an access token
     by calling Google's token endpoint.
@@ -180,7 +186,10 @@ async def _exchange_google_code(code: str) -> dict[str, str]:
     access_token = payload.get("access_token")
     if not isinstance(access_token, str) or not access_token:
         raise GoogleOAuthError("Google token response did not include an access token")
-    return {"access_token": access_token}
+    id_token = payload.get("id_token")
+    if id_token is not None and (not isinstance(id_token, str) or not id_token):
+        raise GoogleOAuthError("Google token response included an invalid ID token")
+    return {"access_token": access_token, "id_token": id_token}
 
 
 async def _fetch_google_userinfo(access_token: str) -> dict[str, str | bool | None]:
@@ -227,6 +236,48 @@ async def _fetch_google_userinfo(access_token: str) -> dict[str, str | bool | No
         "name": name.strip(),
         "picture": picture_url,
     }
+
+
+def _validate_google_subject_consistency(
+    id_token: str | None, userinfo_subject: str | bool | None
+) -> None:
+    """Cross-check the token and userinfo subjects when Google returns both."""
+    if id_token is None:
+        return
+
+    token_subject = _extract_google_id_token_subject(id_token)
+    if token_subject != userinfo_subject:
+        raise GoogleOAuthError(
+            "Google token subject did not match the user info response"
+        )
+
+
+def _extract_google_id_token_subject(id_token: str) -> str:
+    """Read the JWT payload subject for consistency checks.
+
+    This is intentionally limited to subject extraction so we can compare
+    the token endpoint identity with the userinfo identity without adding
+    a separate JWT verification dependency.
+    """
+    segments = id_token.split(".")
+    if len(segments) != 3:
+        raise GoogleOAuthError("Google token response included a malformed ID token")
+
+    payload_segment = segments[1]
+    padding = "=" * (-len(payload_segment) % 4)
+
+    try:
+        payload_bytes = base64.urlsafe_b64decode(payload_segment + padding)
+        payload = json.loads(payload_bytes)
+    except (binascii.Error, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise GoogleOAuthError(
+            "Google token response included a malformed ID token"
+        ) from exc
+
+    subject = payload.get("sub")
+    if not isinstance(subject, str) or not subject:
+        raise GoogleOAuthError("Google token response did not include a valid subject")
+    return subject
 
 
 async def _upsert_google_user(

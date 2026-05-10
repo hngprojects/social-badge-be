@@ -90,7 +90,7 @@ async def register(
 
 @router.post(
     "/forgot-password",
-    response_model=SuccessResponse,
+    response_model=SuccessResponse[None],
     status_code=status.HTTP_200_OK,
     summary="Request a password reset email",
     description=(

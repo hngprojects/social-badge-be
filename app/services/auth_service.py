@@ -38,6 +38,10 @@ logger = logging.getLogger(__name__)
 
 FAILED_LOGIN_PREFIX = "failed_login:"
 
+# Stable dummy hash used to equalize CPU cost between known/unknown users
+# and prevent timing-based account enumeration.
+_DUMMY_PASSWORD_HASH = hash_password("dummy-password-for-timing-equalization")
+
 
 async def signup(
     session: AsyncSession,
@@ -97,6 +101,9 @@ async def signin(
     existing = await session.execute(select(User).where(User.email == payload.email))
     existing_user = existing.scalars().first()
     if not existing_user:
+        # Equalize timing with the wrong-password branch to avoid leaking
+        # whether the email is registered.
+        verify_password(payload.password, _DUMMY_PASSWORD_HASH)
         attempts = await increment_failed_attempts(redis, payload.email)
 
         if attempts >= settings.MAX_LOGIN_ATTEMPTS:

@@ -120,13 +120,16 @@ async def register(
                         "status": "success",
                         "message": "Login successful",
                         "data": {
-                            "id": "123e4567-e89b-12d3-a456-426614174000",
-                            "name": "Jane Doe",
-                            "email": "jane@example.com",
-                            "is_email_verified": False,
-                            "profile_photo_url": None,
-                            "created_at": "2026-05-09T05:28:33Z",
-                            "updated_at": "2026-05-09T05:28:33Z",
+                            "access_token": "eyJhbGciOiJIIsInR5cCI6IkpXVCJ9.ey...",
+                            "user": {
+                                "id": "123e4567-e89b-12d3-a456-426614174000",
+                                "name": "Jane Doe",
+                                "email": "jane@example.com",
+                                "is_email_verified": True,
+                                "profile_photo_url": None,
+                                "created_at": "2026-05-09T05:28:33Z",
+                                "updated_at": "2026-05-09T05:28:33Z",
+                            },
                         },
                     }
                 }

@@ -103,12 +103,14 @@ async def test_refresh_token_requires_user_id(db_session: AsyncSession) -> None:
     """token_hash without a valid user_id should violate FK constraint."""
     import uuid
 
+    from sqlalchemy.exc import IntegrityError
+
     token = RefreshToken(
         user_id=uuid.uuid4(),  # non-existent user
         token_hash="orphan",  # noqa: S106
         expires_at=_future_expiry(),
     )
     db_session.add(token)
-    with pytest.raises(Exception):  # noqa: B017, BLE001
+    with pytest.raises(IntegrityError):
         await db_session.commit()
     await db_session.rollback()

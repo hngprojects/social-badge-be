@@ -212,9 +212,7 @@ async def test_signin_stores_hashed_refresh_token_in_db(
     )
 
     result = await db_session.execute(
-        select(RefreshToken).where(RefreshToken.token_hash != raw_refresh)
-        if False
-        else select(RefreshToken)
+        select(RefreshToken)
         .join(User, RefreshToken.user_id == User.id)
         .where(User.email == "store@example.com")
     )

@@ -12,11 +12,11 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import EmailDeliveryError
+
 from app.core.security import hash_password
 from app.models.user import User
 from app.core.exceptions import EmailDeliveryError, GoogleOAuthError
-from app.models.user import User
+
 
 
 @pytest.fixture
@@ -325,19 +325,19 @@ async def test_google_login_redirects_to_google(client: AsyncClient) -> None:
     assert response.status_code == 307
     redirect_url = response.headers["location"]
     parsed = urlparse(redirect_url)
-    query = parse_qs(parsed.query)
+    query = parse_qs(parsed.query, keep_blank_values=True)
 
     assert parsed.scheme == "https"
     assert parsed.netloc == "accounts.google.com"
     assert parsed.path == "/o/oauth2/v2/auth"
     assert query["response_type"] == ["code"]
-    assert query["client_id"]
-    assert query["redirect_uri"]
-    assert query["scope"]
-    assert query["access_type"] == ["offline"]
-    assert query["prompt"] == ["consent"]
+    assert query["client_id"] == [settings.GOOGLE_CLIENT_ID]
+    assert query["redirect_uri"] == [settings.GOOGLE_REDIRECT_URI]
+    assert query["scope"] == ["openid email profile"]
     assert query["state"]
     assert query["state"][0]
+    assert "access_type" not in query
+    assert "prompt" not in query
 
 
 @patch("app.api.v1.endpoints.auth.authenticate_with_google", new_callable=AsyncMock)

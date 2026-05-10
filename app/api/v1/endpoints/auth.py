@@ -29,6 +29,7 @@ from fastapi.responses import RedirectResponse
 from app.api.deps import DBSession, RedisClient
 from app.core.exceptions import EmailConflictError, GoogleOAuthError
 from app.core.rate_limit import limiter
+from app.core.token import hash_token
 from app.models.user import User
 from app.schemas.auth import (
     ForgotPasswordRequest,
@@ -262,7 +263,8 @@ async def verify_email(
     redis: RedisClient,
     payload: VerifyEmailRequest,
 ) -> Any:
-    token_key = f"verification_token:{payload.token}"
+    token_hash = hash_token(payload.token)
+    token_key = f"verify:{token_hash}"
     user_id = await redis.getdel(token_key)
 
     if not user_id:
@@ -287,7 +289,14 @@ async def verify_email(
 
     user.is_email_verified = True
     session.add(user)
-    await session.commit()
+    try:
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database update failed, please try again",
+        ) from None
 
     return SuccessResponse(message="Email verified", data={"next": "onboarding"})
 

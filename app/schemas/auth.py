@@ -91,12 +91,20 @@ class ResetPasswordRequest(BaseModel):
             "Must contain at least one uppercase, one lowercase, "
             "one number, and one special character."
         ),
-        json_schema_extra={"example": "NewStrongPassword1!"},
+        json_schema_extra={
+            "example": "NewStrongPassword1!",
+            "minLength": 8,
+            "maxLength": 72,
+        },
     )
     confirm_password: str = Field(
         ...,
         description="Must match new password.",
-        json_schema_extra={"example": "NewStrongPassword1!"},
+        json_schema_extra={
+            "example": "NewStrongPassword1!",
+            "minLength": 8,
+            "maxLength": 72,
+        },
     )
 
     @field_validator("new_password")

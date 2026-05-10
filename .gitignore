@@ -26,5 +26,3 @@ env
 .coverage
 htmlcov/
 
-# Alembic
-alembic/versions/

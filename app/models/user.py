@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from app.modules.templates.models.temp_model import TempModel
 from sqlalchemy import Boolean, DateTime, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from uuid_utils import uuid7
@@ -40,3 +41,6 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+
+
+templates: Mapped[list["TempModel"]] = relationship("TempModel", back_populates="organiser")

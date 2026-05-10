@@ -13,7 +13,7 @@ from app.models.user import User
 class TempModel(Base):
     __tablename__ = "organiser_templates"
 
-    id: Mapped[uuid.UUID] = mapped_column(String(255), primary_key=True, default=uuid7, unique=True, index=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7, unique=True, index=True)
     # Foreign Key to the 'users' table
     organiser_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), 

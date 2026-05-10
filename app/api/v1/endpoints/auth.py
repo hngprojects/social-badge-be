@@ -157,7 +157,7 @@ async def verify_email(
     redis: RedisClient,
     payload: VerifyEmailRequest,
 ) -> Any:
-    token_key = f"verification_token:{payload.token}"
+    token_key = f"verify:{payload.token}"
     user_id = await redis.getdel(token_key)
 
     if not user_id:

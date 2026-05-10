@@ -6,6 +6,7 @@ from fastapi.responses import RedirectResponse
 from app.api.deps import DBSession, RedisClient
 from app.core.exceptions import EmailConflictError, GoogleOAuthError
 from app.core.rate_limit import limiter
+from app.core.token import hash_token
 from app.models.user import User
 from app.schemas.auth import (
     ForgotPasswordRequest,
@@ -20,7 +21,6 @@ from app.services.auth_service import (
     request_password_reset,
     signup,
 )
-from app.core.token import hash_token
 
 router = APIRouter()
 
@@ -191,7 +191,7 @@ async def verify_email(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Database update failed, please try again",
-        )
+        ) from None
 
     return SuccessResponse(message="Email verified", data={"next": "onboarding"})
 

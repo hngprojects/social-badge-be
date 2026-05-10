@@ -21,8 +21,6 @@ from app.core.exceptions import (
     InvalidCredentialsError,
 )
 from app.core.security import hash_password, verify_password
-from app.core.exceptions import EmailConflictError, EmailDeliveryError, GoogleOAuthError
-from app.core.security import hash_password
 from app.core.token import (
     create_access_token,
     create_refresh_token,
@@ -116,7 +114,9 @@ async def signin(
     if not existing_user:
         # Equalize timing with the wrong-password branch to avoid leaking
         # whether the email is registered.
-        verify_password(payload.password, _DUMMY_PASSWORD_HASH)
+        await asyncio.to_thread(
+            verify_password, payload.password, _DUMMY_PASSWORD_HASH
+        )
         attempts = await increment_failed_attempts(redis, payload.email)
 
         if attempts >= settings.MAX_LOGIN_ATTEMPTS:
@@ -124,7 +124,9 @@ async def signin(
 
         raise InvalidCredentialsError
 
-    if not verify_password(payload.password, existing_user.password_hash or ""):
+    if not await asyncio.to_thread(
+        verify_password, payload.password, existing_user.password_hash
+    ):
         attempts = await increment_failed_attempts(redis, payload.email)
 
         if attempts >= settings.MAX_LOGIN_ATTEMPTS:

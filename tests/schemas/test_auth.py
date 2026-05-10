@@ -23,9 +23,9 @@ def test_signup_request_valid() -> None:
     assert req.password == "StrongPassword123!"  # noqa: S105
 
 
-def test_signup_request_invalid_name() -> None:
+def test_signup_request_invalid_first_name() -> None:
     data = {
-        "first_name": "",  # Too short
+        "first_name": "",
         "last_name": "Doe",
         "email": "jane.doe@example.com",
         "password": "StrongPassword123!",
@@ -33,7 +33,19 @@ def test_signup_request_invalid_name() -> None:
     with pytest.raises(ValidationError) as exc_info:
         SignupRequest(**data)
 
-    assert "Name fields cannot be empty" in str(exc_info.value)
+    assert "First name cannot be empty" in str(exc_info.value)
+
+
+def test_signup_request_valid_mononym() -> None:
+    data = {
+        "first_name": "Madonna",
+        "last_name": "",
+        "email": "madonna@example.com",
+        "password": "StrongPassword123!",
+    }
+    req = SignupRequest(**data)
+    assert req.first_name == "Madonna"
+    assert req.last_name == ""
 
 
 def test_signup_request_invalid_email() -> None:

@@ -17,7 +17,7 @@ class SignupRequest(BaseModel):
     last_name: str = Field(
         ...,
         description="The last name of the organiser.",
-        json_schema_extra={"example": "Doe", "minLength": 1},
+        json_schema_extra={"example": "Doe", "minLength": 0},
     )
     email: EmailStr = Field(
         ...,
@@ -37,11 +37,18 @@ class SignupRequest(BaseModel):
         },
     )
 
-    @field_validator("first_name", "last_name")
+    @field_validator("first_name")
     @classmethod
-    def validate_names(cls, val: str) -> str:
+    def validate_first_name(cls, val: str) -> str:
         if not val or not val.strip():
-            raise ValueError("Name fields cannot be empty")
+            raise ValueError("First name cannot be empty")
+        return val.strip()
+
+    @field_validator("last_name")
+    @classmethod
+    def validate_last_name(cls, val: str) -> str:
+        if val is None:
+            return ""
         return val.strip()
 
     @field_validator("email", mode="before")

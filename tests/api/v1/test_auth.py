@@ -52,7 +52,10 @@ async def test_signup_endpoint_conflict(
     assert response.status_code == 409
     data = response.json()
     assert data["status"] == "error"
-    assert data["message"] == "Email is already registered"
+    assert (
+        data["message"]
+        == "Unable to create account. Please use a different email or login."
+    )
 
 
 @patch("app.services.auth_service.send_verification_email", new_callable=AsyncMock)

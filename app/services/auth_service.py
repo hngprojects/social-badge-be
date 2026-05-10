@@ -4,11 +4,12 @@ import binascii
 import json
 import logging
 from urllib.parse import urlencode
+from uuid import UUID
 
 import httpx
 from fastapi import Response
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +21,7 @@ from app.core.exceptions import (
     EmailNotVerifiedError,
     GoogleOAuthError,
     InvalidCredentialsError,
+    InvalidPasswordResetTokenError,
 )
 from app.core.security import hash_password, verify_password
 from app.core.token import (
@@ -27,6 +29,7 @@ from app.core.token import (
     create_refresh_token,
     generate_token,
     get_google_oauth_state,
+    get_password_reset_user_id,
     hash_token,
     store_google_oauth_state,
     store_password_reset_token,
@@ -35,7 +38,12 @@ from app.core.token import (
 from app.models.auth_provider import AuthProvider
 from app.models.refresh_tokens import RefreshToken
 from app.models.user import User
-from app.schemas.auth import ForgotPasswordRequest, LoginRequest, SignupRequest
+from app.schemas.auth import (
+    ForgotPasswordRequest,
+    LoginRequest,
+    ResetPasswordRequest,
+    SignupRequest,
+)
 from app.services.email_service import (
     send_account_lock_email,
     send_password_reset_email,
@@ -100,6 +108,38 @@ async def signup(
         email_sent = False
 
     return user, email_sent
+
+
+async def reset_password(
+    session: AsyncSession,
+    redis: Redis,
+    payload: ResetPasswordRequest,
+) -> None:
+    """Reset a user's password and invalidate existing sessions."""
+    token_hash = hash_token(payload.token)
+    user_id = await get_password_reset_user_id(redis, token_hash)
+
+    if user_id is None:
+        raise InvalidPasswordResetTokenError
+
+    try:
+        parsed_user_id = UUID(user_id)
+    except ValueError as exc:
+        raise InvalidPasswordResetTokenError from exc
+
+    result = await session.execute(select(User).where(User.id == parsed_user_id))
+    user = result.scalars().first()
+
+    if user is None:
+        raise InvalidPasswordResetTokenError
+
+    user.password_hash = await asyncio.to_thread(hash_password, payload.new_password)
+    await session.execute(
+        delete(RefreshToken).where(RefreshToken.user_id == parsed_user_id)
+    )
+    await session.flush()
+    await session.refresh(user)
+    await session.commit()
 
 
 async def signin(

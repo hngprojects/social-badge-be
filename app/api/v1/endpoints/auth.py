@@ -10,6 +10,7 @@ from app.core.exceptions import (
     EmailNotVerifiedError,
     GoogleOAuthError,
     InvalidCredentialsError,
+    InvalidPasswordResetTokenError,
 )
 from app.core.rate_limit import limiter
 from app.core.token import hash_token
@@ -18,6 +19,7 @@ from app.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
     LoginResponse,
+    ResetPasswordRequest,
     SignupRequest,
     UserResponse,
     VerifyEmailRequest,
@@ -27,6 +29,7 @@ from app.services.auth_service import (
     authenticate_with_google,
     build_google_auth_url,
     request_password_reset,
+    reset_password,
     set_refresh_cookie,
     signin,
     signup,
@@ -107,6 +110,51 @@ async def register(
     return SuccessResponse(
         message=message,
         data=UserResponse.model_validate(user),
+    )
+
+
+@router.post(
+    "/reset-password",
+    response_model=SuccessResponse[None],
+    status_code=status.HTTP_200_OK,
+    summary="Reset Organizer Password",
+    responses={
+        200: {
+            "description": "Password reset successful",
+        },
+        400: {
+            "model": ErrorResponse,
+            "description": "Token is invalid or expired",
+        },
+        422: {
+            "model": ErrorResponse,
+            "description": "Validation error in the payload",
+        },
+        429: {
+            "model": ErrorResponse,
+            "description": "Too many requests",
+        },
+    },
+)
+@limiter.limit("5/minute")
+async def reset_organizer_password(
+    request: Request,
+    payload: ResetPasswordRequest,
+    session: DBSession,
+    redis: RedisClient,
+) -> SuccessResponse[None]:
+    """Reset a user's password using a valid password reset token."""
+    try:
+        await reset_password(session, redis, payload)
+    except InvalidPasswordResetTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="token is invalid or expired",
+        ) from exc
+
+    return SuccessResponse(
+        message="Password reset successful. Please proceed to login.",
+        data=None,
     )
 
 

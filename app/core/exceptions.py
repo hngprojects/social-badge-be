@@ -6,6 +6,10 @@ class EmailDeliveryError(Exception):
     pass
 
 
+class InvalidPasswordResetTokenError(Exception):
+    pass
+
+
 class AccountLockedError(Exception):
     """Exception raised for locked account (HTTP 423)."""
 

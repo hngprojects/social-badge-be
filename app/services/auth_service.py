@@ -9,7 +9,7 @@ from uuid import UUID
 import httpx
 from fastapi import Response
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -133,7 +133,11 @@ async def reset_password(
         raise InvalidPasswordResetTokenError
 
     user.password_hash = await asyncio.to_thread(hash_password, payload.new_password)
-
+    await session.execute(
+        delete(RefreshToken).where(RefreshToken.user_id == parsed_user_id)
+    )
+    await session.flush()
+    await session.refresh(user)
     await session.commit()
 
 

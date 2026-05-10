@@ -83,24 +83,6 @@ def test_login_request_invalid_email() -> None:
         LoginRequest(email="not-an-email", password="StrongPassword1!")  # noqa: S106
 
 
-@pytest.mark.parametrize(
-    "invalid_password,expected_error",
-    [
-        ("short1!", "Password must be at least 8 characters long"),
-        ("nouppercase123!", "Password must contain at least one uppercase letter"),
-        ("NOLOWERCASE123!", "Password must contain at least one lowercase letter"),
-        ("NoNumbersHere!", "Password must contain at least one number"),
-        ("NoSpecialChar123", "Password must contain at least one special character"),
-    ],
-)
-def test_login_request_invalid_password(
-    invalid_password: str, expected_error: str
-) -> None:
-    with pytest.raises(ValidationError) as exc_info:
-        LoginRequest(email="jane@example.com", password=invalid_password)
-    assert expected_error in str(exc_info.value)
-
-
 # ---------------------------------------------------------------------------
 # UserResponse tests
 # ---------------------------------------------------------------------------

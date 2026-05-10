@@ -632,12 +632,32 @@ async def test_exchange_google_code_rejects_invalid_id_token_type() -> None:
             await _exchange_google_code("auth-code")
 
 
+async def test_exchange_google_code_rejects_non_object_payload() -> None:
+    mock_response = MagicMock()
+    mock_response.raise_for_status.return_value = None
+    mock_response.json.return_value = ["not", "an", "object"]
+
+    with patch(
+        "app.services.auth_service.httpx.AsyncClient.post",
+        new_callable=AsyncMock,
+        return_value=mock_response,
+    ):
+        with pytest.raises(
+            GoogleOAuthError, match="Google token response was not a JSON object"
+        ):
+            await _exchange_google_code("auth-code")
+
+
 @pytest.mark.parametrize(
     ("id_token", "expected_message"),
     [
         ("not-a-jwt", "Google token response included a malformed ID token"),
         (
             "header.e30.signature",
+            "Google token response did not include a valid subject",
+        ),
+        (
+            "header.W10.signature",
             "Google token response did not include a valid subject",
         ),
     ],
@@ -691,6 +711,22 @@ async def test_fetch_google_userinfo_maps_http_status_error() -> None:
             await _fetch_google_userinfo("bad-token")
 
     assert exc.value.status_code == 403
+
+
+async def test_fetch_google_userinfo_rejects_non_object_payload() -> None:
+    mock_response = MagicMock()
+    mock_response.raise_for_status.return_value = None
+    mock_response.json.return_value = ["not", "an", "object"]
+
+    with patch(
+        "app.services.auth_service.httpx.AsyncClient.get",
+        new_callable=AsyncMock,
+        return_value=mock_response,
+    ):
+        with pytest.raises(
+            GoogleOAuthError, match="Google user info response was not a JSON object"
+        ):
+            await _fetch_google_userinfo("token")
 
 
 async def test_fetch_google_userinfo_maps_transport_error() -> None:

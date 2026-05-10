@@ -122,8 +122,6 @@ async def build_google_auth_url(redis: Redis) -> str:
             "redirect_uri": settings.GOOGLE_REDIRECT_URI,
             "response_type": "code",
             "scope": " ".join(GOOGLE_SCOPES),
-            "access_type": "offline",
-            "prompt": "consent",
             "state": state,
         }
     )
@@ -183,6 +181,8 @@ async def _exchange_google_code(code: str) -> dict[str, str | None]:
             ) from exc
 
     payload = response.json()
+    if not isinstance(payload, dict):
+        raise GoogleOAuthError("Google token response was not a JSON object")
     access_token = payload.get("access_token")
     if not isinstance(access_token, str) or not access_token:
         raise GoogleOAuthError("Google token response did not include an access token")
@@ -213,6 +213,8 @@ async def _fetch_google_userinfo(access_token: str) -> dict[str, str | bool | No
             ) from exc
 
     payload = response.json()
+    if not isinstance(payload, dict):
+        raise GoogleOAuthError("Google user info response was not a JSON object")
     subject = payload.get("sub")
     email = payload.get("email")
     email_verified = payload.get("email_verified")
@@ -273,6 +275,9 @@ def _extract_google_id_token_subject(id_token: str) -> str:
         raise GoogleOAuthError(
             "Google token response included a malformed ID token"
         ) from exc
+
+    if not isinstance(payload, dict):
+        raise GoogleOAuthError("Google token response did not include a valid subject")
 
     subject = payload.get("sub")
     if not isinstance(subject, str) or not subject:

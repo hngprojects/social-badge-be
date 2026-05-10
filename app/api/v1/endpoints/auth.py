@@ -21,7 +21,8 @@ from app.schemas.response import ErrorResponse, SuccessResponse
 from app.services.auth_service import (
     request_password_reset,
     set_refresh_cookie,
-    signin,
+    signin
+)
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 
@@ -40,7 +41,7 @@ from app.services.auth_service import (
     authenticate_with_google,
     build_google_auth_url,
     request_password_reset,
-    signup,
+    signup
 )
 
 router = APIRouter()

@@ -428,9 +428,13 @@ async def _upsert_google_user(
         is_new_user = user is None
 
         if user is None:
-            names = name.split(maxsplit=1)
-            first_name = names[0]
-            last_name = names[1] if len(names) > 1 else ""
+            names = name.split(maxsplit=1) if name and name.strip() else []
+            if names:
+                first_name = names[0]
+                last_name = names[1] if len(names) > 1 else ""
+            else:
+                first_name = email.split("@")[0]
+                last_name = ""
 
             user = User(
                 first_name=first_name,

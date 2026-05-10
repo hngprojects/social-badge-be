@@ -2,8 +2,8 @@ import pytest
 from httpx import AsyncClient
 
 from app.api.deps import DBSession, RedisClient
-from app.models.user import User
 from app.core.token import hash_token
+from app.models.user import User
 
 
 @pytest.fixture

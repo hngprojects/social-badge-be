@@ -20,6 +20,7 @@ from app.services.auth_service import (
     request_password_reset,
     signup,
 )
+from app.core.token import hash_token
 
 router = APIRouter()
 
@@ -157,7 +158,8 @@ async def verify_email(
     redis: RedisClient,
     payload: VerifyEmailRequest,
 ) -> Any:
-    token_key = f"verify:{payload.token}"
+    token_hash = hash_token(payload.token)
+    token_key = f"verify:{token_hash}"
     user_id = await redis.getdel(token_key)
 
     if not user_id:

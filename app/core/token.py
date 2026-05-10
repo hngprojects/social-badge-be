@@ -6,6 +6,8 @@ from redis.asyncio import Redis
 from app.core.config import settings
 
 TOKEN_PREFIX = "verify:"  # noqa: S105
+RESET_TOKEN_PREFIX = "reset:"  # noqa: S105
+RESET_TOKEN_TTL_SECONDS = 60 * 60
 
 
 def generate_token() -> tuple[str, str]:
@@ -44,6 +46,32 @@ async def get_verified_user_id(
     because verification tokens are single-use.
     """
     key = f"{TOKEN_PREFIX}{token_hash}"
+    user_id = await redis.get(key)
+    if user_id is not None:
+        await redis.delete(key)
+        return str(user_id)
+    return None
+
+
+async def store_password_reset_token(
+    redis: Redis,
+    token_hash: str,
+    user_id: str,
+) -> None:
+    """Store a password reset token hash as one-time Redis token."""
+    await redis.set(
+        f"{RESET_TOKEN_PREFIX}{token_hash}",
+        user_id,
+        ex=RESET_TOKEN_TTL_SECONDS,
+    )
+
+
+async def get_password_reset_user_id(
+    redis: Redis,
+    token_hash: str,
+) -> str | None:
+    """Look up and consume a password reset token."""
+    key = f"{RESET_TOKEN_PREFIX}{token_hash}"
     user_id = await redis.get(key)
     if user_id is not None:
         await redis.delete(key)

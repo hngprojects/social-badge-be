@@ -4,3 +4,7 @@ class EmailConflictError(Exception):
 
 class EmailDeliveryError(Exception):
     pass
+
+
+class InvalidPasswordResetTokenError(Exception):
+    pass

@@ -3,11 +3,11 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, status
 
 from app.api.deps import DBSession, RedisClient
-from app.core.exceptions import EmailConflictError
+from app.core.exceptions import EmailConflictError, InvalidPasswordResetTokenError
 from app.core.rate_limit import limiter
-from app.schemas.auth import SignupRequest, UserResponse
+from app.schemas.auth import ResetPasswordRequest, SignupRequest, UserResponse
 from app.schemas.response import ErrorResponse, SuccessResponse
-from app.services.auth_service import signup
+from app.services.auth_service import reset_password, signup
 
 router = APIRouter()
 
@@ -79,4 +79,43 @@ async def register(
     return SuccessResponse(
         message=message,
         data=UserResponse.model_validate(user),
+    )
+
+
+@router.post(
+    "/reset-password",
+    response_model=SuccessResponse[None],
+    status_code=status.HTTP_200_OK,
+    summary="Reset Organizer Password",
+    responses={
+        200: {
+            "description": "Password reset successful",
+        },
+        400: {
+            "model": ErrorResponse,
+            "description": "Token is invalid or expired",
+        },
+        422: {
+            "model": ErrorResponse,
+            "description": "Validation error in the payload",
+        },
+    },
+)
+async def reset_oganizer_password(
+    payload: ResetPasswordRequest,
+    session: DBSession,
+    redis: RedisClient,
+) -> SuccessResponse[None]:
+    """Reset a user's password using a valid password reset token."""
+    try:
+        await reset_password(session, redis, payload)
+    except InvalidPasswordResetTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="token is invalid or expired",
+        ) from exc
+
+    return SuccessResponse(
+        message="Password reset successful. Please proceed to login.",
+        data=None,
     )

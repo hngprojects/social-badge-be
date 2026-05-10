@@ -1,9 +1,16 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from fakeredis import FakeAsyncRedis
 from httpx import AsyncClient
+from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import EmailDeliveryError
+from app.core.security import hash_password, verify_password
+from app.core.token import generate_token, store_password_reset_token
+from app.models.user import User
+from app.schemas.auth import ResetPasswordRequest
 
 
 @pytest.fixture
@@ -88,3 +95,158 @@ async def test_signup_endpoint_rate_limit(
     data = response.json()
     assert data["status"] == "error"
     assert data["message"] == "Rate limit exceeded"
+
+
+def test_reset_password_request() -> None:
+    data = {
+        "token": "reset-token",
+        "new_password": "NewStrongPassword123!",
+        "confirm_password": "NewStrongPassword123!",
+    }
+
+    req = ResetPasswordRequest(**data)
+
+    assert req.token == "reset-token"  # noqa: S105
+    assert req.new_password == "NewStrongPassword123!"  # noqa: S105
+    assert req.confirm_password == "NewStrongPassword123!"  # noqa: S105
+
+
+def test_reset_pasword_request_rejects_password_mismatch() -> None:
+    data = {
+        "token": "reset-token",
+        "new_password": "NewStrongPassword123!",
+        "confirm_password": "DifferentStrongPassword123!",
+    }
+
+    with pytest.raises(ValidationError) as exc_info:
+        ResetPasswordRequest(**data)
+
+    assert "Passwords do not match" in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "invalid_password,expected_error",
+    [
+        ("short1!", "Password must be at least 8 characters long"),
+        ("nouppercase123!", "Password must contain at least one uppercase letter"),
+        ("NOLOWERCASE123!", "Password must contain at least one lowercase letter"),
+        ("NoNumbersHere!", "Password must contain at least one number"),
+        ("NoSpecialChar123", "Password must contain at least one special character"),
+    ],
+)
+def test_reset_password_request_invalid(
+    invalid_password: str,
+    expected_error: str,
+) -> None:
+    data = {
+        "token": "reset-token",
+        "new_password": invalid_password,
+        "confirm_password": invalid_password,
+    }
+
+    with pytest.raises(ValidationError) as exc_info:
+        ResetPasswordRequest(**data)
+
+    assert expected_error in str(exc_info.value)
+
+
+def test_reset_password_request_rejects_empty_token() -> None:
+    data = {
+        "token": "",
+        "new_password": "NewStrongPassword123!",
+        "confirm_password": "NewStrongPassword123!",
+    }
+
+    with pytest.raises(ValidationError):
+        ResetPasswordRequest(**data)
+
+
+async def test_reset_password_endpoint_success(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    fake_redis: FakeAsyncRedis,
+) -> None:
+    user = User(
+        name="API Reset User",
+        email="api-reset@example.com",
+        password_hash=hash_password("OldStrongPassword123!"),
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    raw_token, token_hash = generate_token()
+    await store_password_reset_token(fake_redis, token_hash, str(user.id))
+
+    response = await client.post(
+        "/api/v1/auth/reset-password",
+        json={
+            "token": raw_token,
+            "new_password": "NewStrongPassword123!",
+            "confirm_password": "NewStrongPassword123!",
+        },
+    )
+
+    await db_session.refresh(user)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["message"] == "Password reset successful. Please proceed to login."
+    assert data["data"] is None
+    assert user.password_hash is not None
+    assert verify_password("NewStrongPassword123!", user.password_hash) is True
+
+
+async def test_reset_password_endpoint_invalid_token(
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/reset-password",
+        json={
+            "token": "missing-token",
+            "new_password": "NewStrongPassword123!",
+            "confirm_password": "NewStrongPassword123!",
+        },
+    )
+
+    assert response.status_code == 400
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["message"] == "token is invalid or expired"
+
+
+async def test_reset_password_endpoint_rejects_password_mismatch(
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/reset-password",
+        json={
+            "token": "reset-token",
+            "new_password": "NewStrongPassword123!",
+            "confirm_password": "DifferentPassword123!",
+        },
+    )
+
+    assert response.status_code == 422
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["message"] == "Passwords do not match"
+
+
+async def test_reset_password_endpoint_rejects_weak_password(
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/reset-password",
+        json={
+            "token": "reset-token",
+            "new_password": "weak",
+            "confirm_password": "weak",
+        },
+    )
+
+    assert response.status_code == 422
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["message"] == "Password must be at least 8 characters long"

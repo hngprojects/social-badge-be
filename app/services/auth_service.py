@@ -1,13 +1,24 @@
+from uuid import UUID
+
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import EmailConflictError, EmailDeliveryError
+from app.core.exceptions import (
+    EmailConflictError,
+    EmailDeliveryError,
+    InvalidPasswordResetTokenError,
+)
 from app.core.security import hash_password
-from app.core.token import generate_token, store_verification_token
+from app.core.token import (
+    generate_token,
+    get_password_reset_user_id,
+    hash_token,
+    store_verification_token,
+)
 from app.models.auth_provider import AuthProvider
 from app.models.user import User
-from app.schemas.auth import SignupRequest
+from app.schemas.auth import ResetPasswordRequest, SignupRequest
 from app.services.email_service import send_verification_email
 
 
@@ -50,3 +61,26 @@ async def signup(
         email_sent = False
 
     return user, email_sent
+
+
+async def reset_password(
+    session: AsyncSession,
+    redis: Redis,
+    payload: ResetPasswordRequest,
+) -> None:
+    """Reset a user's password and invalidate existing sessions."""
+    token_hash = hash_token(payload.token)
+    user_id = await get_password_reset_user_id(redis, token_hash)
+
+    if user_id is None:
+        raise InvalidPasswordResetTokenError
+
+    result = await session.execute(select(User).where(User.id == UUID(user_id)))
+    user = result.scalars().first()
+
+    if user is None:
+        raise InvalidPasswordResetTokenError
+
+    user.password_hash = hash_password(payload.new_password)
+
+    await session.commit()

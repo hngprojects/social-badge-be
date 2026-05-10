@@ -3,7 +3,14 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 
 class SignupRequest(BaseModel):
@@ -38,17 +45,57 @@ class SignupRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, val: str) -> str:
-        if len(val) < 8:
-            raise ValueError("Password must be at least 8 characters long")
-        if not re.search(r"[A-Z]", val):
-            raise ValueError("Password must contain at least one uppercase letter")
-        if not re.search(r"[a-z]", val):
-            raise ValueError("Password must contain at least one lowercase letter")
-        if not re.search(r"\d", val):
-            raise ValueError("Password must contain at least one number")
-        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", val):
-            raise ValueError("Password must contain at least one special character")
-        return val
+        return validate_password_strength(val)
+
+
+def validate_password_strength(val: str) -> str:
+    """Validate that a password meets strength requirement"""
+    if len(val) < 8:
+        raise ValueError("Password must be at least 8 characters long")
+    if not re.search(r"[A-Z]", val):
+        raise ValueError("Password must contain at least one uppercase letter")
+    if not re.search(r"[a-z]", val):
+        raise ValueError("Password must contain at least one lowercase letter")
+    if not re.search(r"\d", val):
+        raise ValueError("Password must contain at least one number")
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", val):
+        raise ValueError("Password must contain at least one special character")
+    return val
+
+
+class ResetPasswordRequest(BaseModel):
+    """Schema for resetting a user's password with reset token"""
+
+    token: str = Field(
+        ...,
+        min_length=1,
+        description="Password reset token sent to the user's email.",
+        json_schema_extra={"example": "reset-token-from-email"},
+    )
+    new_password: str = Field(
+        ...,
+        description=(
+            "Must contain atleast one uppercase, one lowercase, "
+            "one number, and one special character."
+        ),
+        json_schema_extra={"example": "NewStrongPassword1!"},
+    )
+    confirm_password: str = Field(
+        ...,
+        description="Must match new password.",
+        json_schema_extra={"example": "NewStrongPassword1!"},
+    )
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, val: str) -> str:
+        return validate_password_strength(val)
+
+    @model_validator(mode="after")
+    def validate_password_match(self) -> "ResetPasswordRequest":
+        if self.new_password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        return self
 
 
 class UserResponse(BaseModel):

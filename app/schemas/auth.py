@@ -154,6 +154,7 @@ class LoginResponse(BaseModel):
     user: UserResponse = Field(
         ...,
         description="The authenticated user's profile details.",
+    )
 class VerifyEmailRequest(BaseModel):
     """Schema for the email verification request payload."""
 

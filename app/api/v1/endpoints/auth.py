@@ -367,7 +367,7 @@ async def google_login(request: Request, redis: RedisClient) -> RedirectResponse
 
 @router.get(
     "/google/callback",
-    response_model=SuccessResponse[UserResponse],
+    response_model=SuccessResponse[LoginResponse],
     status_code=status.HTTP_200_OK,
     summary="Handle Google OAuth callback",
     description=(
@@ -383,13 +383,17 @@ async def google_login(request: Request, redis: RedisClient) -> RedirectResponse
                         "status": "success",
                         "message": "Google authentication successful.",
                         "data": {
-                            "id": "123e4567-e89b-12d3-a456-426614174000",
-                            "name": "Jane Doe",
-                            "email": "jane@example.com",
-                            "is_email_verified": True,
-                            "profile_photo_url": "https://example.com/photo.jpg",
-                            "created_at": "2026-05-09T05:28:33Z",
-                            "updated_at": "2026-05-09T05:28:33Z",
+                            "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                            "user": {
+                                "id": "123e4567-e89b-12d3-a456-426614174000",
+                                "first_name": "Jane",
+                                "last_name": "Doe",
+                                "email": "jane@example.com",
+                                "is_email_verified": True,
+                                "profile_photo_url": "https://example.com/photo.jpg",
+                                "created_at": "2026-05-09T05:28:33Z",
+                                "updated_at": "2026-05-09T05:28:33Z",
+                            },
                         },
                     }
                 }

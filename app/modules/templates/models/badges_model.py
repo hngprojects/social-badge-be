@@ -27,10 +27,10 @@ class Badge(Base):
     profile_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     badge_image_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=True
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    updated_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), onupdate=func.now(), nullable=True
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), onupdate=func.now(), nullable=False
     )
 
     # Relationship back to the OrganiserTemplate

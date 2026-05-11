@@ -20,8 +20,8 @@ class PlatformTemplate(Base):
         primary_key=True, default=uuid7, index=True, nullable=False
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    canvas_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=True)
-    thumbnail_url: Mapped[str] = mapped_column(String(255), nullable=True)
+    canvas_data: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    thumbnail_url: Mapped[str | None] = mapped_column(String(255), nullable=True)    
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=True

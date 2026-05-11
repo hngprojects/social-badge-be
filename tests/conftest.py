@@ -28,6 +28,10 @@ from app.models.base import Base
 def create_db_engine() -> AsyncEngine:
     db_url = str(settings.DATABASE_URL)
 
+    # Force the use of the 'test' database to avoid dropping main database tables!
+    if not db_url.endswith("/test"):
+        db_url = db_url.rsplit("/", 1)[0] + "/test"
+
     test_engine = create_async_engine(
         db_url,
         poolclass=NullPool,

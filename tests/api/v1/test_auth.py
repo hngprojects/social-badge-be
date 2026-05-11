@@ -16,7 +16,7 @@ from app.core.exceptions import EmailDeliveryError, GoogleOAuthError
 from app.core.security import hash_password, verify_password
 from app.core.token import generate_token, store_password_reset_token
 from app.models.user import User
-from app.schemas.auth import ResetPasswordRequest, UserResponse
+from app.schemas.auth import ResetPasswordRequest
 
 
 @pytest.fixture
@@ -529,7 +529,12 @@ async def test_google_login_redirects_to_google(client: AsyncClient) -> None:
 @patch("app.api.v1.endpoints.auth.create_access_token")
 @patch("app.api.v1.endpoints.auth.authenticate_with_google", new_callable=AsyncMock)
 async def test_google_callback_success(
-    mock_authenticate: AsyncMock, mock_create_access: AsyncMock, mock_create_refresh: AsyncMock, mock_hash: AsyncMock, client: AsyncClient, db_session: AsyncSession
+    mock_authenticate: AsyncMock,
+    mock_create_access: AsyncMock,
+    mock_create_refresh: AsyncMock,
+    mock_hash: AsyncMock,
+    client: AsyncClient,
+    db_session: AsyncSession,
 ) -> None:
     user = User(
         id=uuid.uuid4(),
@@ -546,9 +551,12 @@ async def test_google_callback_success(
     await db_session.commit()
 
     mock_authenticate.return_value = (user, False)
-    mock_create_access.return_value = "test_access_token"
-    mock_create_refresh.return_value = ("test_refresh_token", datetime.now(UTC) + timedelta(days=30))
-    mock_hash.return_value = "hashed_token"
+    mock_create_access.return_value = "test_access_token"  # noqa: S105
+    mock_create_refresh.return_value = (
+        "test_refresh_token",
+        datetime.now(UTC) + timedelta(days=30),
+    )  # noqa: S105
+    mock_hash.return_value = "hashed_token"  # noqa: S105
 
     response = await client.get(
         "/api/v1/auth/google/callback?code=test-code&state=test-state"
@@ -558,7 +566,7 @@ async def test_google_callback_success(
     data = response.json()
     assert data["status"] == "success"
     assert data["message"] == "Google authentication successful."
-    assert data["data"]["access_token"] == "test_access_token"
+    assert data["data"]["access_token"] == "test_access_token"  # noqa: S105
     assert data["data"]["user"]["email"] == "google@example.com"
     assert data["data"]["user"]["first_name"] == "Google"
     assert data["data"]["user"]["last_name"] == "User"

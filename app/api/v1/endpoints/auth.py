@@ -8,6 +8,7 @@ from app.core.exceptions import (
     AccountLockedError,
     EmailConflictError,
     EmailNotVerifiedError,
+    GoogleOAuthError,
     InvalidCredentialsError,
     InvalidPasswordResetTokenError,
 )
@@ -410,7 +411,10 @@ async def google_callback(
     code: str = Query(..., description="Google authorization code"),
     state: str = Query(..., description="OAuth state used to prevent CSRF"),
 ) -> SuccessResponse[LoginResponse]:
-    user, is_new_user = await authenticate_with_google(session, redis, code, state)
+    try:
+        user, is_new_user = await authenticate_with_google(session, redis, code, state)
+    except GoogleOAuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
     access_token = create_access_token(user.id)
     raw_refresh_token, expire = create_refresh_token(user.id)

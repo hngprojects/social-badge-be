@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
     ALLOWED_ORIGINS: list[str] | str = []
 
+    # SMTP Settings (Fallback)
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, val: Any) -> list[str] | str:
@@ -89,8 +96,15 @@ class Settings(BaseSettings):
                 raise ValueError("GOOGLE_CLIENT_ID must be set in production")
             if google_client_secret in {"", "your_google_client_secret_here"}:
                 raise ValueError("GOOGLE_CLIENT_SECRET must be set in production")
-            if not contact_email:
+            if contact_email in {"", "support@yourdomain.com"}:
                 raise ValueError("CONTACT_RECIPIENT_EMAIL must be set in production")
+
+            # SMTP Fallback Validation
+            smtp_user = self.SMTP_USER.strip()
+            smtp_pass = self.SMTP_PASSWORD.strip()
+            if smtp_user == "" or smtp_pass == "":
+                raise ValueError("SMTP fallback credentials must be set in production")
+
         return self
 
 

@@ -48,8 +48,8 @@ async def test_upload_logo_returns_url_and_public_id() -> None:
 
 async def test_upload_logo_public_id_is_unique() -> None:
     """Two consecutive uploads of the same bytes should produce different public_ids."""
-    url1, public_id1 = await upload_logo(_TINY_PNG)
-    url2, public_id2 = await upload_logo(_TINY_PNG)
+    _, public_id1 = await upload_logo(_TINY_PNG)
+    _, public_id2 = await upload_logo(_TINY_PNG)
 
     assert public_id1 != public_id2
 

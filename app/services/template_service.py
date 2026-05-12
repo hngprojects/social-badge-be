@@ -170,14 +170,28 @@ async def upload_template_logo(
     try:
         await session.commit()
     except Exception:
-        # DB commit failed — remove the just-uploaded asset to avoid orphans.
-        await delete_logo(public_id)
+        await session.rollback()
+        # DB commit failed — best-effort cleanup of the just-uploaded asset.
+        try:
+            await delete_logo(public_id)
+        except Exception:
+            logger.warning(
+                "Failed to clean up Cloudinary asset %s after DB commit failure",
+                public_id,
+            )
         raise
     await session.refresh(instance)
 
     # Only delete the old asset after the DB is consistent.
+    # A failure here is non-fatal — the new logo is already persisted.
     if old_public_id:
-        await delete_logo(old_public_id)
+        try:
+            await delete_logo(old_public_id)
+        except Exception:
+            logger.warning(
+                "Failed to delete old Cloudinary asset %s — manual cleanup may be required",  # noqa: E501
+                old_public_id,
+            )
 
     logger.info(
         "Uploaded logo for template instance %s (public_id=%s)",

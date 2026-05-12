@@ -221,7 +221,8 @@ async def unpublish(
         "Accepts a multipart/form-data upload with a single PNG or JPG image "
         "(max 2 MB). Stores the file in Cloudinary under the template-logos/ "
         "folder and returns the resulting URL. If the instance already has a "
-        "logo the old file is deleted from Cloudinary first. "
+        "logo, the new file is uploaded and persisted first, then the old "
+        "Cloudinary asset is deleted. "
         "The instance must belong to the authenticated organiser."
     ),
     responses={

@@ -39,13 +39,17 @@ def _configure_cloudinary() -> None:
     )
 
 
-def _upload_sync(data: bytes, public_id: str) -> str:
-    """Upload raw bytes to Cloudinary; returns the secure URL."""
+def _upload_sync(data: bytes, filename: str) -> str:
+    """Upload raw bytes to Cloudinary under LOGO_FOLDER; returns the secure URL.
+
+    The Cloudinary public_id will be ``<LOGO_FOLDER>/<filename>`` because
+    ``folder`` is passed separately — this matches what ``upload_logo`` stores.
+    """
     _configure_cloudinary()
     try:
         result = cloudinary.uploader.upload(
             data,
-            public_id=public_id,
+            public_id=filename,
             folder=LOGO_FOLDER,
             resource_type="image",
             overwrite=True,

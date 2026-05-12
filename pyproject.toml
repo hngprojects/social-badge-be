@@ -20,6 +20,7 @@ dependencies = [
     "slowapi>=0.1.9",
     "python-jose[cryptography]>=3.5.0",
     "httpx>=0.28.0",
+    "cloudinary>=1.44.2",
 ]
 
 [dependency-groups]

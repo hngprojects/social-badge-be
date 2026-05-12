@@ -54,3 +54,15 @@ class PublishedTemplateResponse(BaseModel):
     updated_at: datetime | None = Field(
         ..., description="When the template was last updated."
     )
+
+
+class LogoUploadResponse(BaseModel):
+    """Response body for the PUT /templates/instances/:id/logo endpoint."""
+
+    logo_url: str = Field(
+        ...,
+        description="The Cloudinary URL of the uploaded logo.",
+        json_schema_extra={
+            "example": "https://res.cloudinary.com/demo/image/upload/template-logos/abc123.png"
+        },
+    )

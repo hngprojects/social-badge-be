@@ -11,9 +11,12 @@ from app.core.exceptions import (
     OrganiserTemplateNotFoundError,
     PlatformTemplateNotFoundError,
     TemplateAlreadyPublishedError,
+    TemplateInstanceForbiddenError,
+    TemplateInstanceNotFoundError,
 )
 from app.core.slug import generate_share_slug
 from app.models import OrganiserTemplate, PlatformTemplate
+from app.services.cloudinary_service import delete_logo, upload_logo
 
 logger = logging.getLogger(__name__)
 
@@ -128,3 +131,71 @@ async def unpublish_template(
 
     logger.info("Unpublished template %s by organiser %s", template.id, organizer_id)
     return template
+
+
+async def upload_template_logo(
+    session: AsyncSession,
+    instance_id: UUID,
+    organizer_id: UUID,
+    image_data: bytes,
+) -> str:
+    """Upload a logo for a template instance and return the Cloudinary URL.
+
+    Raises:
+        TemplateInstanceNotFoundError: if the instance does not exist.
+        TemplateInstanceForbiddenError: if the instance belongs to another organiser.
+        CloudinaryUploadError: if the Cloudinary upload fails.
+    """
+    result = await session.execute(
+        select(OrganiserTemplate).where(
+            OrganiserTemplate.id == instance_id,
+            OrganiserTemplate.deleted_at.is_(None),
+        )
+    )
+    instance = result.scalars().first()
+
+    if instance is None:
+        raise TemplateInstanceNotFoundError
+
+    if instance.organizer_id != organizer_id:
+        raise TemplateInstanceForbiddenError
+
+    old_public_id = instance.logo_public_id
+
+    # Upload first so the DB always points at a live asset.
+    logo_url, public_id = await upload_logo(image_data)
+
+    instance.logo_url = logo_url
+    instance.logo_public_id = public_id
+    try:
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        # DB commit failed — best-effort cleanup of the just-uploaded asset.
+        try:
+            await delete_logo(public_id)
+        except Exception:
+            logger.warning(
+                "Failed to clean up Cloudinary asset %s after DB commit failure",
+                public_id,
+            )
+        raise
+    await session.refresh(instance)
+
+    # Only delete the old asset after the DB is consistent.
+    # A failure here is non-fatal — the new logo is already persisted.
+    if old_public_id:
+        try:
+            await delete_logo(old_public_id)
+        except Exception:
+            logger.warning(
+                "Failed to delete old Cloudinary asset %s — manual cleanup may be required",  # noqa: E501
+                old_public_id,
+            )
+
+    logger.info(
+        "Uploaded logo for template instance %s (public_id=%s)",
+        instance_id,
+        public_id,
+    )
+    return logo_url

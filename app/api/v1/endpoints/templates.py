@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, UploadFile, status
 
 from app.api.deps import CurrentUser, DBSession
 from app.core.exceptions import (
@@ -8,11 +8,14 @@ from app.core.exceptions import (
     OrganiserTemplateNotFoundError,
     PlatformTemplateNotFoundError,
     TemplateAlreadyPublishedError,
+    TemplateInstanceForbiddenError,
+    TemplateInstanceNotFoundError,
 )
 from app.core.rate_limit import limiter
 from app.schemas.response import ErrorResponse, SuccessResponse
 from app.schemas.template import (
     CreateTemplateInstanceRequest,
+    LogoUploadResponse,
     PublishedTemplateResponse,
     TemplateInstanceResponse,
 )
@@ -20,9 +23,22 @@ from app.services.template_service import (
     create_template_instance,
     publish_template,
     unpublish_template,
+    upload_template_logo,
 )
 
 router = APIRouter()
+
+_MAX_LOGO_BYTES = 2 * 1024 * 1024  # 2 MB
+_ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg"}
+
+# Magic bytes for format verification (cannot be spoofed via Content-Type header).
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+_JPEG_MAGIC = b"\xff\xd8\xff"
+
+
+def _is_valid_image(data: bytes) -> bool:
+    """Return True only if bytes start with a recognised PNG or JPEG signature."""
+    return data[:8] == _PNG_MAGIC or data[:3] == _JPEG_MAGIC
 
 
 @router.post(
@@ -193,4 +209,101 @@ async def unpublish(
     return SuccessResponse(
         message="Template unpublished successfully.",
         data=PublishedTemplateResponse.model_validate(template),
+    )
+
+
+@router.put(
+    "/instances/{instance_id}/logo",
+    response_model=SuccessResponse[LogoUploadResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Upload a logo for a template instance",
+    description=(
+        "Accepts a multipart/form-data upload with a single PNG or JPG image "
+        "(max 2 MB). Stores the file in Cloudinary under the template-logos/ "
+        "folder and returns the resulting URL. If the instance already has a "
+        "logo, the new file is uploaded and persisted first, then the old "
+        "Cloudinary asset is deleted. "
+        "The instance must belong to the authenticated organiser."
+    ),
+    responses={
+        200: {
+            "description": "Logo uploaded successfully.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "message": "Logo uploaded successfully.",
+                        "data": {
+                            "logo_url": "https://res.cloudinary.com/demo/image/upload/template-logos/abc.png"
+                        },
+                    }
+                }
+            },
+        },
+        401: {"model": ErrorResponse, "description": "Unauthenticated."},
+        403: {
+            "model": ErrorResponse,
+            "description": "Instance belongs to another organiser.",
+        },
+        404: {"model": ErrorResponse, "description": "Template instance not found."},
+        413: {"model": ErrorResponse, "description": "File exceeds the 2 MB limit."},
+        415: {
+            "model": ErrorResponse,
+            "description": "Unsupported file type (PNG and JPG only).",
+        },
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded."},
+    },
+)
+@limiter.limit("10/minute")
+async def upload_logo(
+    instance_id: UUID,
+    request: Request,
+    session: DBSession,
+    current_user: CurrentUser,
+    file: UploadFile,
+) -> SuccessResponse[LogoUploadResponse]:
+    """Upload or replace the logo for a template instance."""
+    if file.content_type not in _ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported file type. Only PNG and JPG images are allowed.",
+        )
+
+    # Read one byte beyond the limit so we can detect oversized files without
+    # loading an arbitrarily large upload into memory.
+    image_data = await file.read(_MAX_LOGO_BYTES + 1)
+    if len(image_data) > _MAX_LOGO_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="File size exceeds the 2 MB limit.",
+        )
+
+    # Verify the actual file signature — content_type is client-controlled.
+    if not _is_valid_image(image_data):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported file type. Only PNG and JPG images are allowed.",
+        )
+
+    try:
+        logo_url = await upload_template_logo(
+            session=session,
+            instance_id=instance_id,
+            organizer_id=current_user.id,
+            image_data=image_data,
+        )
+    except TemplateInstanceNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template instance not found.",
+        ) from exc
+    except TemplateInstanceForbiddenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to modify this template instance.",
+        ) from exc
+
+    return SuccessResponse(
+        message="Logo uploaded successfully.",
+        data=LogoUploadResponse(logo_url=logo_url),
     )

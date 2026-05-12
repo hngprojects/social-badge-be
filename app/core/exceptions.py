@@ -63,3 +63,21 @@ class TemplateAlreadyPublishedError(Exception):
     """Raised when publishing a template that is already published."""
 
     pass
+
+
+class TemplateInstanceNotFoundError(Exception):
+    """Raised when the requested organiser template instance does not exist."""
+
+    pass
+
+
+class TemplateInstanceForbiddenError(Exception):
+    """Raised when the authenticated user does not own the template instance."""
+
+    pass
+
+
+class CloudinaryUploadError(Exception):
+    """Raised when a Cloudinary upload or deletion fails."""
+
+    pass

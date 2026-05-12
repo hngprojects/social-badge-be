@@ -11,6 +11,7 @@ from app.models.base import Base
 if TYPE_CHECKING:
     from app.models.auth_provider import AuthProvider
     from app.models.refresh_tokens import RefreshToken
+    from app.models.template_instance import TemplateInstance
 
 
 class User(Base):
@@ -44,6 +45,11 @@ class User(Base):
     )
 
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    template_instances: Mapped[list["TemplateInstance"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )

@@ -17,6 +17,8 @@ from app.core.exceptions import (
 )
 from app.core.rate_limit import limiter
 from app.core.token import (
+    create_access_token,
+    create_refresh_token,
     hash_token,
 )
 from app.models.user import User
@@ -30,6 +32,7 @@ from app.schemas.auth import (
     UserResponse,
     VerifyEmailRequest,
 )
+from app.models.refresh_tokens import RefreshToken
 from app.schemas.response import ErrorResponse, SuccessResponse
 from app.services.auth_service import (
     authenticate_with_google,
@@ -38,6 +41,7 @@ from app.services.auth_service import (
     refresh_session,
     request_password_reset,
     reset_password,
+    set_access_cookie,
     set_refresh_cookie,
     signin,
     signup,
@@ -495,19 +499,34 @@ async def google_login(request: Request, redis: RedisClient) -> RedirectResponse
 @limiter.limit("10/minute")
 async def google_callback(
     request: Request,
+    response: Response,
     session: DBSession,
     redis: RedisClient,
     code: str = Query(..., description="Google authorization code"),
     state: str = Query(..., description="OAuth state used to prevent CSRF"),
 ) -> RedirectResponse:
     try:
-        await authenticate_with_google(session, redis, code, state)
+        user, _ = await authenticate_with_google(session, redis, code, state)
     except GoogleOAuthError as exc:
         error_query = urlencode({"error": exc.message})
         return RedirectResponse(
             url=f"{settings.FRONTEND_URL}/login?{error_query}",
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
         )
+
+    access_token = create_access_token(user.id)
+    raw_refresh_token, expire = create_refresh_token(user.id)
+
+    refresh_token = RefreshToken(
+        user_id=user.id,
+        token_hash=hash_token(raw_refresh_token),
+        expires_at=expire,
+    )
+    session.add(refresh_token)
+    await session.commit()
+
+    set_access_cookie(response, access_token)
+    set_refresh_cookie(response, raw_refresh_token)
 
     return RedirectResponse(
         url=f"{settings.FRONTEND_URL}/coming-soon",

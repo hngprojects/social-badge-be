@@ -28,6 +28,7 @@ class Settings(BaseSettings):
 
     COOKIE_SECURE: bool = False
     COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
+    ACCESS_COOKIE: str = "access_token"
     REFRESH_COOKIE: str = "refresh_token"
 
     @model_validator(mode="after")

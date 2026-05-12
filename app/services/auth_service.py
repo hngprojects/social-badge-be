@@ -45,6 +45,7 @@ from app.models.user import User
 from app.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
+    ResendVerificationRequest,
     ResetPasswordRequest,
     SignupRequest,
 )
@@ -112,6 +113,32 @@ async def signup(
         email_sent = False
 
     return user, email_sent
+
+
+async def resend_verification_email(
+    session: AsyncSession,
+    redis: Redis,
+    payload: ResendVerificationRequest,
+) -> None:
+    # Fetch user by email (same pattern as signup)
+    result = await session.execute(select(User).where(User.email == payload.email))
+    user = result.scalars().first()
+
+    # Silent exit if already verified or user doesn't exist
+    if not user:
+        return
+
+    if user.is_email_verified:
+        return
+
+    # Generate & store new verification token
+    raw_token, token_hash = generate_token()
+    await store_verification_token(redis, token_hash, str(user.id))
+
+    try:
+        await send_verification_email(user.email, raw_token)
+    except EmailDeliveryError:
+        pass
 
 
 async def reset_password(

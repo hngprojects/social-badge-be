@@ -7,7 +7,8 @@ Backend API for the Social Badge platform — built with FastAPI, async SQLAlche
 ## Current Features
 
 - **Authentication System**: Secure signup flow with email verification support, robust password hashing using bcrypt, and strict input validation.
-- **Rate Limiting**: Integrated `slowapi` to protect critical endpoints (like signup) from spam and abuse.
+- **Rate Limiting**: Integrated `slowapi` to protect critical endpoints (signup, contact form) from spam and abuse.
+- **Contact Us System**: Public endpoint for inquiries with automated team notifications and sender confirmations, protected by XSS-safe email templates.
 - **Global Error Handling**: Standardized success and error response schemas universally across all endpoints for frontend consumption.
 - **Testing**: Comprehensive `pytest` suite ensuring full coverage of business logic with mocked dependencies (`fakeredis`, overridden async sessions).
 
@@ -120,11 +121,12 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/social_badge
 REDIS_URL=redis://localhost:6379/0
 RESEND_API_KEY=re_your_api_key_here
 RESEND_FROM_EMAIL=noreply@yourdomain.com
+CONTACT_RECIPIENT_EMAIL=support@yourdomain.com
 ALLOWED_ORIGINS=["http://localhost:3000","http://localhost:5000"]
 ```
 
 > [!IMPORTANT]
-> `RESEND_API_KEY` and `RESEND_FROM_EMAIL` have dummy defaults for local development. However, if `ENVIRONMENT` is set to `production`, the application will fail to start unless valid, non-dummy values are provided.
+> `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, and `CONTACT_RECIPIENT_EMAIL` have dummy defaults for local development. However, if `ENVIRONMENT` is set to `production`, the application will fail to start unless valid, non-dummy values are provided.
 
 ### 4. Create the database
 

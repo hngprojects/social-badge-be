@@ -110,9 +110,6 @@ async def test_signup_endpoint_rate_limit(
     assert data["message"] == "Rate limit exceeded"
 
 
-
-
-
 def test_reset_password_request() -> None:
     data = {
         "token": "reset-token",
@@ -287,8 +284,6 @@ async def test_reset_password_endpoint_rate_limit(client: AsyncClient) -> None:
     assert data["message"] == "Rate limit exceeded"
 
 
-
-
 # ------------------------------------------------------
 # RESEND VERIFICATION EMAIL TESTS
 # ------------------------------------------------------
@@ -331,8 +326,7 @@ async def test_resend_verification_email_success(
 
     assert data["status"] == "success"
     assert (
-        data["message"]
-        == "If your email is registered and unverified, "
+        data["message"] == "If your email is registered and unverified, "
         "a new verification email has been sent."
     )
 
@@ -428,6 +422,7 @@ async def test_resend_verification_email_rate_limit(
     data = response.json()
     assert data["status"] == "error"
     assert data["message"] == "Rate limit exceeded"
+
 
 # ---------------------------------------------------------------------------
 # Login endpoint tests

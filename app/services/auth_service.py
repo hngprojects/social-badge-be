@@ -121,9 +121,7 @@ async def resend_verification_email(
     payload: ResendVerificationRequest,
 ) -> None:
     # Fetch user by email (same pattern as signup)
-    result = await session.execute(
-        select(User).where(User.email == payload.email)
-    )
+    result = await session.execute(select(User).where(User.email == payload.email))
     user = result.scalars().first()
 
     # Silent exit if already verified or user doesn't exist

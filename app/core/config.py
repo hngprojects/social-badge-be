@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     GOOGLE_OAUTH_STATE_TTL_MINUTES: int = 10
 
     PASSWORD_RESET_TOKEN_TTL_MINUTES: int = 30
+    CONTACT_RECIPIENT_EMAIL: str = ""
 
     @model_validator(mode="after")
     def validate_production_settings(self) -> Self:
@@ -77,6 +78,7 @@ class Settings(BaseSettings):
         from_email = self.RESEND_FROM_EMAIL.strip()
         google_client_id = self.GOOGLE_CLIENT_ID.strip()
         google_client_secret = self.GOOGLE_CLIENT_SECRET.strip()
+        contact_email = self.CONTACT_RECIPIENT_EMAIL.strip()
 
         if environment == "production":
             if api_key in {"", "re_dummy_api_key", "re_your_api_key_here"}:
@@ -87,6 +89,8 @@ class Settings(BaseSettings):
                 raise ValueError("GOOGLE_CLIENT_ID must be set in production")
             if google_client_secret in {"", "your_google_client_secret_here"}:
                 raise ValueError("GOOGLE_CLIENT_SECRET must be set in production")
+            if not contact_email:
+                raise ValueError("CONTACT_RECIPIENT_EMAIL must be set in production")
         return self
 
 

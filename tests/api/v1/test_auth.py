@@ -288,7 +288,7 @@ async def test_reset_password_endpoint_rate_limit(client: AsyncClient) -> None:
 # RESEND VERIFICATION EMAIL TESTS
 # ------------------------------------------------------
 @pytest.fixture
-async def unverified_resend_user(db_session) -> dict[str, str]:
+async def unverified_resend_user(db_session: AsyncSession) -> dict[str, str]:
     creds = {
         "email": "resend@example.com",
         "password": "StrongPassword1!",
@@ -358,7 +358,7 @@ async def test_resend_verification_email_nonexistent_user(
 async def test_resend_verification_email_already_verified(
     mock_send_email: AsyncMock,
     client: AsyncClient,
-    db_session,
+    db_session: AsyncSession,
 ) -> None:
     user = User(
         first_name="Verified",

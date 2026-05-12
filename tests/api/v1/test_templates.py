@@ -286,7 +286,9 @@ async def test_unpublish_template_not_found(
 
 # ── logo upload ────────────────────────────────────────────────────────────────
 
-_FAKE_PNG = b"fake-png-bytes"
+# Minimal valid PNG/JPEG magic bytes so the endpoint's signature check passes.
+_FAKE_PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
+_FAKE_JPEG = b"\xff\xd8\xff" + b"\x00" * 8
 _FAKE_URL = "https://res.cloudinary.com/demo/image/upload/template-logos/abc.png"
 _FAKE_PUBLIC_ID = "template-logos/abc"
 
@@ -391,7 +393,7 @@ async def test_upload_logo_replaces_existing(
     response = await client.put(
         f"/api/v1/templates/instances/{template_instance_with_logo.id}/logo",
         headers=auth_headers,
-        files={"file": ("logo.jpg", _FAKE_PNG, "image/jpeg")},
+        files={"file": ("logo.jpg", _FAKE_JPEG, "image/jpeg")},
     )
 
     assert response.status_code == 200
@@ -425,7 +427,8 @@ async def test_upload_logo_too_large(
     auth_headers: dict[str, str],
     template_instance: OrganiserTemplate,
 ) -> None:
-    oversized = b"x" * (2 * 1024 * 1024 + 1)
+    # PNG magic + enough padding to exceed 2 MB.
+    oversized = _FAKE_PNG + b"x" * (2 * 1024 * 1024)
 
     response = await client.put(
         f"/api/v1/templates/instances/{template_instance.id}/logo",
@@ -485,6 +488,88 @@ async def test_upload_logo_forbidden(
     assert response.status_code == 403
     data = response.json()
     assert data["status"] == "error"
+
+
+@patch("app.services.template_service.upload_logo", new_callable=AsyncMock)
+async def test_upload_logo_rejects_spoofed_mime_type(
+    mock_upload: AsyncMock,
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    template_instance: OrganiserTemplate,
+) -> None:
+    """File declared as image/png but containing GIF magic bytes should be rejected."""
+    gif_bytes = b"GIF89a" + b"\x00" * 20
+
+    response = await client.put(
+        f"/api/v1/templates/instances/{template_instance.id}/logo",
+        headers=auth_headers,
+        files={"file": ("evil.png", gif_bytes, "image/png")},
+    )
+
+    assert response.status_code == 415
+    mock_upload.assert_not_called()
+
+
+@patch("app.services.template_service.upload_logo", new_callable=AsyncMock)
+async def test_upload_logo_soft_deleted_instance_returns_404(
+    mock_upload: AsyncMock,
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+    test_user: User,
+    platform_template: PlatformTemplate,
+) -> None:
+    """A soft-deleted instance should be treated as not found."""
+    from datetime import UTC, datetime
+
+    deleted_instance = OrganiserTemplate(
+        organizer_id=test_user.id,
+        platform_template_id=platform_template.id,
+        title="Deleted Template",
+        canvas_data={},
+        deleted_at=datetime.now(UTC),
+    )
+    db_session.add(deleted_instance)
+    await db_session.commit()
+    await db_session.refresh(deleted_instance)
+
+    response = await client.put(
+        f"/api/v1/templates/instances/{deleted_instance.id}/logo",
+        headers=auth_headers,
+        files={"file": ("logo.png", _FAKE_PNG, "image/png")},
+    )
+
+    assert response.status_code == 404
+    mock_upload.assert_not_called()
+
+
+@patch("app.services.template_service.delete_logo", new_callable=AsyncMock)
+@patch("app.services.template_service.upload_logo", new_callable=AsyncMock)
+async def test_upload_logo_uploads_before_deleting_old(
+    mock_upload: AsyncMock,
+    mock_delete: AsyncMock,
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    template_instance_with_logo: OrganiserTemplate,
+) -> None:
+    """New asset must be uploaded and persisted before the old one is deleted."""
+    call_order: list[str] = []
+    mock_upload.side_effect = lambda *_: (
+        call_order.append("upload"),
+        (_FAKE_URL, _FAKE_PUBLIC_ID),
+    )[-1]  # noqa: E501
+    mock_delete.side_effect = lambda *_: call_order.append("delete")
+
+    response = await client.put(
+        f"/api/v1/templates/instances/{template_instance_with_logo.id}/logo",
+        headers=auth_headers,
+        files={"file": ("logo.png", _FAKE_PNG, "image/png")},
+    )
+
+    assert response.status_code == 200
+    assert call_order == ["upload", "delete"], (
+        f"Expected upload before delete, got: {call_order}"
+    )
 
 
 @patch("app.services.template_service.delete_logo", new_callable=AsyncMock)

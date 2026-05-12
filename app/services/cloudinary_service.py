@@ -17,11 +17,20 @@ from app.core.exceptions import CloudinaryUploadError
 logger = logging.getLogger(__name__)
 
 LOGO_FOLDER = "template-logos"
-_MAX_BYTES = 2 * 1024 * 1024  # 2 MB
-ALLOWED_MIME_TYPES = {"image/png", "image/jpeg"}
 
 
 def _configure_cloudinary() -> None:
+    if not all(
+        [
+            settings.CLOUDINARY_CLOUD_NAME,
+            settings.CLOUDINARY_API_KEY,
+            settings.CLOUDINARY_API_SECRET,
+        ]
+    ):
+        raise CloudinaryUploadError(
+            "Cloudinary credentials are not configured. "
+            "Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET."
+        )
     cloudinary.config(
         cloud_name=settings.CLOUDINARY_CLOUD_NAME,
         api_key=settings.CLOUDINARY_API_KEY,

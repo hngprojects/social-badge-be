@@ -31,6 +31,15 @@ router = APIRouter()
 _MAX_LOGO_BYTES = 2 * 1024 * 1024  # 2 MB
 _ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg"}
 
+# Magic bytes for format verification (cannot be spoofed via Content-Type header).
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+_JPEG_MAGIC = b"\xff\xd8\xff"
+
+
+def _is_valid_image(data: bytes) -> bool:
+    """Return True only if bytes start with a recognised PNG or JPEG signature."""
+    return data[:8] == _PNG_MAGIC or data[:3] == _JPEG_MAGIC
+
 
 @router.post(
     "/instances",
@@ -259,11 +268,20 @@ async def upload_logo(
             detail="Unsupported file type. Only PNG and JPG images are allowed.",
         )
 
-    image_data = await file.read()
+    # Read one byte beyond the limit so we can detect oversized files without
+    # loading an arbitrarily large upload into memory.
+    image_data = await file.read(_MAX_LOGO_BYTES + 1)
     if len(image_data) > _MAX_LOGO_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="File size exceeds the 2 MB limit.",
+        )
+
+    # Verify the actual file signature — content_type is client-controlled.
+    if not _is_valid_image(image_data):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported file type. Only PNG and JPG images are allowed.",
         )
 
     try:

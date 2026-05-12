@@ -15,8 +15,15 @@ from app.core.exceptions import CloudinaryUploadError
 from app.services.cloudinary_service import delete_logo, upload_logo
 
 pytestmark = pytest.mark.skipif(
-    not settings.CLOUDINARY_CLOUD_NAME,
-    reason="Cloudinary credentials not configured — set CLOUDINARY_CLOUD_NAME to run",
+    not (
+        settings.CLOUDINARY_CLOUD_NAME
+        and settings.CLOUDINARY_API_KEY
+        and settings.CLOUDINARY_API_SECRET
+    ),
+    reason=(
+        "Cloudinary credentials not configured — set CLOUDINARY_CLOUD_NAME, "
+        "CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET to run"
+    ),
 )
 
 # Minimal valid 1×1 PNG (67 bytes, base64-decoded).

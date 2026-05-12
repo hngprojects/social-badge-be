@@ -147,7 +147,10 @@ async def upload_template_logo(
         CloudinaryUploadError: if the Cloudinary upload fails.
     """
     result = await session.execute(
-        select(OrganiserTemplate).where(OrganiserTemplate.id == instance_id)
+        select(OrganiserTemplate).where(
+            OrganiserTemplate.id == instance_id,
+            OrganiserTemplate.deleted_at.is_(None),
+        )
     )
     instance = result.scalars().first()
 
@@ -157,16 +160,24 @@ async def upload_template_logo(
     if instance.organizer_id != organizer_id:
         raise TemplateInstanceForbiddenError
 
-    # Delete the existing logo from Cloudinary before uploading the new one.
-    if instance.logo_public_id:
-        await delete_logo(instance.logo_public_id)
+    old_public_id = instance.logo_public_id
 
+    # Upload first so the DB always points at a live asset.
     logo_url, public_id = await upload_logo(image_data)
 
     instance.logo_url = logo_url
     instance.logo_public_id = public_id
-    await session.commit()
+    try:
+        await session.commit()
+    except Exception:
+        # DB commit failed — remove the just-uploaded asset to avoid orphans.
+        await delete_logo(public_id)
+        raise
     await session.refresh(instance)
+
+    # Only delete the old asset after the DB is consistent.
+    if old_public_id:
+        await delete_logo(old_public_id)
 
     logger.info(
         "Uploaded logo for template instance %s (public_id=%s)",

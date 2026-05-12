@@ -70,6 +70,10 @@ class Settings(BaseSettings):
 
     PASSWORD_RESET_TOKEN_TTL_MINUTES: int = 30
 
+    CLOUDINARY_CLOUD_NAME: str = ""
+    CLOUDINARY_API_KEY: str = ""
+    CLOUDINARY_API_SECRET: str = ""
+
     @model_validator(mode="after")
     def validate_production_settings(self) -> Self:
         environment = self.ENVIRONMENT.strip().lower()

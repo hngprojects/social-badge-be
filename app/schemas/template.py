@@ -35,3 +35,15 @@ class TemplateInstanceResponse(BaseModel):
         ...,
         description="When the instance was created.",
     )
+
+
+class LogoUploadResponse(BaseModel):
+    """Response body for the PUT /templates/instances/:id/logo endpoint."""
+
+    logo_url: str = Field(
+        ...,
+        description="The Cloudinary URL of the uploaded logo.",
+        json_schema_extra={
+            "example": "https://res.cloudinary.com/demo/image/upload/template-logos/abc123.png"
+        },
+    )

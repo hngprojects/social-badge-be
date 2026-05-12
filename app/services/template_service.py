@@ -4,8 +4,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import PlatformTemplateNotFoundError
+from app.core.exceptions import (
+    PlatformTemplateNotFoundError,
+    TemplateInstanceForbiddenError,
+    TemplateInstanceNotFoundError,
+)
 from app.models import OrganiserTemplate, PlatformTemplate
+from app.services.cloudinary_service import delete_logo, upload_logo
 
 logger = logging.getLogger(__name__)
 
@@ -45,3 +50,46 @@ async def create_template_instance(
         organizer_id,
     )
     return instance
+
+
+async def upload_template_logo(
+    session: AsyncSession,
+    instance_id: UUID,
+    organizer_id: UUID,
+    image_data: bytes,
+) -> str:
+    """Upload a logo for a template instance and return the Cloudinary URL.
+
+    Raises:
+        TemplateInstanceNotFoundError: if the instance does not exist.
+        TemplateInstanceForbiddenError: if the instance belongs to another organiser.
+        CloudinaryUploadError: if the Cloudinary upload fails.
+    """
+    result = await session.execute(
+        select(OrganiserTemplate).where(OrganiserTemplate.id == instance_id)
+    )
+    instance = result.scalars().first()
+
+    if instance is None:
+        raise TemplateInstanceNotFoundError
+
+    if instance.organizer_id != organizer_id:
+        raise TemplateInstanceForbiddenError
+
+    # Delete the existing logo from Cloudinary before uploading the new one.
+    if instance.logo_public_id:
+        await delete_logo(instance.logo_public_id)
+
+    logo_url, public_id = await upload_logo(image_data)
+
+    instance.logo_url = logo_url
+    instance.logo_public_id = public_id
+    await session.commit()
+    await session.refresh(instance)
+
+    logger.info(
+        "Uploaded logo for template instance %s (public_id=%s)",
+        instance_id,
+        public_id,
+    )
+    return logo_url

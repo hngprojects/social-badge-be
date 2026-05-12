@@ -525,10 +525,12 @@ async def google_callback(
     session.add(refresh_token)
     await session.commit()
 
-    set_access_cookie(response, access_token)
-    set_refresh_cookie(response, raw_refresh_token)
-
-    return RedirectResponse(
+    redirect = RedirectResponse(
         url=f"{settings.FRONTEND_URL}/coming-soon",
         status_code=status.HTTP_307_TEMPORARY_REDIRECT,
     )
+
+    set_access_cookie(redirect, access_token)
+    set_refresh_cookie(redirect, raw_refresh_token)
+
+    return redirect

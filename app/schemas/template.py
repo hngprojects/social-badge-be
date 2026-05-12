@@ -35,3 +35,22 @@ class TemplateInstanceResponse(BaseModel):
         ...,
         description="When the instance was created.",
     )
+
+
+class PublishedTemplateResponse(BaseModel):
+    """Schema for the publish/unpublish response payload."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID = Field(..., description="The template instance id.")
+    title: str = Field(..., description="The template title.")
+    is_published: bool = Field(..., description="Whether the template is published.")
+    published_at: datetime | None = Field(
+        ..., description="When the template was published (null if never published)."
+    )
+    share_slug: str | None = Field(
+        ..., description="The public share slug (null if never published)."
+    )
+    updated_at: datetime | None = Field(
+        ..., description="When the template was last updated."
+    )

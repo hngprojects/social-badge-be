@@ -45,3 +45,21 @@ class PlatformTemplateNotFoundError(Exception):
     """Raised when a referenced platform template does not exist."""
 
     pass
+
+
+class OrganiserTemplateNotFoundError(Exception):
+    """Raised when an organiser template does not exist."""
+
+    pass
+
+
+class NotTemplateOwnerError(Exception):
+    """Raised when a user tries to act on a template they don't own."""
+
+    pass
+
+
+class TemplateAlreadyPublishedError(Exception):
+    """Raised when publishing a template that is already published."""
+
+    pass

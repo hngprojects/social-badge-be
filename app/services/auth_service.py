@@ -45,6 +45,7 @@ from app.models.user import User
 from app.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
+    ResendVerificationRequest,
     ResetPasswordRequest,
     SignupRequest,
 )
@@ -112,6 +113,32 @@ async def signup(
         email_sent = False
 
     return user, email_sent
+
+
+async def resend_verification_email(
+    session: AsyncSession,
+    redis: Redis,
+    payload: ResendVerificationRequest,
+) -> None:
+    # Fetch user by email (same pattern as signup)
+    result = await session.execute(select(User).where(User.email == payload.email))
+    user = result.scalars().first()
+
+    # Silent exit if already verified or user doesn't exist
+    if not user:
+        return
+
+    if user.is_email_verified:
+        return
+
+    # Generate & store new verification token
+    raw_token, token_hash = generate_token()
+    await store_verification_token(redis, token_hash, str(user.id))
+
+    try:
+        await send_verification_email(user.email, raw_token)
+    except EmailDeliveryError:
+        pass
 
 
 async def reset_password(
@@ -295,6 +322,17 @@ async def logout_session(
             await session.commit()
 
     await _blacklist_access_token_if_valid(redis, access_token)
+
+
+def set_access_cookie(response: Response, access_token: str) -> None:
+    response.set_cookie(
+        key=settings.ACCESS_COOKIE,
+        value=access_token,
+        httponly=True,
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAMESITE,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
 
 
 def set_refresh_cookie(response: Response, refresh_token: str) -> None:

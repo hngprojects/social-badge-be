@@ -1,8 +1,8 @@
 import uuid
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from unittest.mock import ANY, AsyncMock, patch
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import pytest
 from fakeredis import FakeAsyncRedis
@@ -284,6 +284,146 @@ async def test_reset_password_endpoint_rate_limit(client: AsyncClient) -> None:
     assert data["message"] == "Rate limit exceeded"
 
 
+# ------------------------------------------------------
+# RESEND VERIFICATION EMAIL TESTS
+# ------------------------------------------------------
+@pytest.fixture
+async def unverified_resend_user(db_session: AsyncSession) -> dict[str, str]:
+    creds = {
+        "email": "resend@example.com",
+        "password": "StrongPassword1!",
+    }
+
+    user = User(
+        first_name="Resend",
+        last_name="User",
+        email=creds["email"],
+        password_hash=hash_password(creds["password"]),
+        is_email_verified=False,
+    )
+
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    return creds
+
+
+# SUCCESS CASE
+@patch("app.services.auth_service.send_verification_email", new_callable=AsyncMock)
+async def test_resend_verification_email_success(
+    mock_send_email: AsyncMock,
+    client: AsyncClient,
+    unverified_resend_user: dict[str, str],
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/resend-verification-email",
+        json={"email": unverified_resend_user["email"]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["status"] == "success"
+    assert (
+        data["message"] == "If your email is registered and unverified, "
+        "a new verification email has been sent."
+    )
+
+    mock_send_email.assert_called_once()
+
+
+# NON-EXISTENT USER (NO ENUMERATION)
+@patch("app.services.auth_service.send_verification_email", new_callable=AsyncMock)
+async def test_resend_verification_email_nonexistent_user(
+    mock_send_email: AsyncMock,
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/resend-verification-email",
+        json={"email": "ghost@example.com"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["status"] == "success"
+    assert "verification email has been sent" in data["message"]
+
+    mock_send_email.assert_not_called()
+
+
+# ALREADY VERIFIED USER
+@patch("app.services.auth_service.send_verification_email", new_callable=AsyncMock)
+async def test_resend_verification_email_already_verified(
+    mock_send_email: AsyncMock,
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    user = User(
+        first_name="Verified",
+        last_name="User",
+        email="verified@example.com",
+        password_hash=hash_password("StrongPassword1!"),
+        is_email_verified=True,
+    )
+
+    db_session.add(user)
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/v1/auth/resend-verification-email",
+        json={"email": "verified@example.com"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["status"] == "success"
+    assert "verification email has been sent" in data["message"]
+
+    mock_send_email.assert_not_called()
+
+
+# VALIDATION ERROR
+async def test_resend_verification_email_validation_error(
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/resend-verification-email",
+        json={"email": "not-an-email"},
+    )
+
+    assert response.status_code == 422
+    data = response.json()
+
+    assert data["status"] == "error"
+    assert "message" in data
+
+
+# RATE LIMIT TEST
+@patch("app.services.auth_service.send_verification_email", new_callable=AsyncMock)
+async def test_resend_verification_email_rate_limit(
+    mock_send_email: AsyncMock,
+    client: AsyncClient,
+) -> None:
+    payload = {"email": "ratelimit@example.com"}
+
+    for _ in range(10):
+        await client.post("/api/v1/auth/resend-verification-email", json=payload)
+
+    response = await client.post(
+        "/api/v1/auth/resend-verification-email",
+        json=payload,
+    )
+
+    assert response.status_code == 429
+
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["message"] == "Rate limit exceeded"
+
+
 # ---------------------------------------------------------------------------
 # Login endpoint tests
 # ---------------------------------------------------------------------------
@@ -524,15 +664,9 @@ async def test_google_login_redirects_to_google(client: AsyncClient) -> None:
     assert "prompt" not in query
 
 
-@patch("app.api.v1.endpoints.auth.hash_token")
-@patch("app.api.v1.endpoints.auth.create_refresh_token")
-@patch("app.api.v1.endpoints.auth.create_access_token")
 @patch("app.api.v1.endpoints.auth.authenticate_with_google", new_callable=AsyncMock)
 async def test_google_callback_success(
     mock_authenticate: AsyncMock,
-    mock_create_access: AsyncMock,
-    mock_create_refresh: AsyncMock,
-    mock_hash: AsyncMock,
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
@@ -551,43 +685,39 @@ async def test_google_callback_success(
     await db_session.commit()
 
     mock_authenticate.return_value = (user, False)
-    mock_create_access.return_value = "test_access_token"  # noqa: S105
-    mock_create_refresh.return_value = (
-        "test_refresh_token",
-        datetime.now(UTC) + timedelta(days=30),
-    )  # noqa: S105
-    mock_hash.return_value = "hashed_token"  # noqa: S105
 
     response = await client.get(
-        "/api/v1/auth/google/callback?code=test-code&state=test-state"
+        "/api/v1/auth/google/callback?code=test-code&state=test-state",
+        follow_redirects=False,
     )
 
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "success"
-    assert data["message"] == "Google authentication successful."
-    assert data["data"]["access_token"] == "test_access_token"  # noqa: S105
-    assert data["data"]["user"]["email"] == "google@example.com"
-    assert data["data"]["user"]["first_name"] == "Google"
-    assert data["data"]["user"]["last_name"] == "User"
+    assert response.status_code == 307
+    assert response.headers["location"] == f"{settings.FRONTEND_URL}/coming-soon"
+    mock_authenticate.assert_awaited_once_with(
+        ANY,
+        ANY,
+        "test-code",
+        "test-state",
+    )
 
 
 @patch("app.api.v1.endpoints.auth.authenticate_with_google", new_callable=AsyncMock)
 async def test_google_callback_returns_error_response(
     mock_authenticate: AsyncMock, client: AsyncClient
 ) -> None:
-    mock_authenticate.side_effect = GoogleOAuthError(
-        "Invalid or expired Google OAuth state"
-    )
+    error_message = "Invalid or expired Google OAuth state"
+    mock_authenticate.side_effect = GoogleOAuthError(error_message)
 
     response = await client.get(
-        "/api/v1/auth/google/callback?code=test-code&state=test-state"
+        "/api/v1/auth/google/callback?code=test-code&state=test-state",
+        follow_redirects=False,
     )
 
-    assert response.status_code == 400
-    data = response.json()
-    assert data["status"] == "error"
-    assert data["message"] == "Invalid or expired Google OAuth state"
+    assert response.status_code == 307
+    assert (
+        response.headers["location"]
+        == f"{settings.FRONTEND_URL}/login?{urlencode({'error': error_message})}"
+    )
     mock_authenticate.assert_awaited_once_with(
         ANY,
         ANY,

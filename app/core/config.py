@@ -23,11 +23,12 @@ class Settings(BaseSettings):
     VERIFICATION_TOKEN_TTL_MINUTES: int = 30
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-    SECRET_KEY: str  # required; no default — fail at startup if unset
+    SECRET_KEY: str
     ALGORITHM: Literal["HS256", "HS384", "HS512"] = "HS256"
 
     COOKIE_SECURE: bool = False
     COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
+    ACCESS_COOKIE: str = "access_token"
     REFRESH_COOKIE: str = "refresh_token"
 
     @model_validator(mode="after")
@@ -41,8 +42,15 @@ class Settings(BaseSettings):
 
     RESEND_API_KEY: str = "re_dummy_api_key"
     RESEND_FROM_EMAIL: str = "noreply@yourdomain.com"
-    FRONTEND_URL: str = "http://localhost:5173"
+    FRONTEND_URL: str = "http://localhost:3000"
     ALLOWED_ORIGINS: list[str] | str = []
+
+    # SMTP Settings (Fallback)
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod
@@ -68,6 +76,7 @@ class Settings(BaseSettings):
     GOOGLE_OAUTH_STATE_TTL_MINUTES: int = 10
 
     PASSWORD_RESET_TOKEN_TTL_MINUTES: int = 30
+    CONTACT_RECIPIENT_EMAIL: str = ""
 
     @model_validator(mode="after")
     def validate_production_settings(self) -> Self:
@@ -76,6 +85,7 @@ class Settings(BaseSettings):
         from_email = self.RESEND_FROM_EMAIL.strip()
         google_client_id = self.GOOGLE_CLIENT_ID.strip()
         google_client_secret = self.GOOGLE_CLIENT_SECRET.strip()
+        contact_email = self.CONTACT_RECIPIENT_EMAIL.strip()
 
         if environment == "production":
             if api_key in {"", "re_dummy_api_key", "re_your_api_key_here"}:
@@ -86,6 +96,15 @@ class Settings(BaseSettings):
                 raise ValueError("GOOGLE_CLIENT_ID must be set in production")
             if google_client_secret in {"", "your_google_client_secret_here"}:
                 raise ValueError("GOOGLE_CLIENT_SECRET must be set in production")
+            if contact_email in {"", "support@yourdomain.com"}:
+                raise ValueError("CONTACT_RECIPIENT_EMAIL must be set in production")
+
+            # SMTP Fallback Validation
+            smtp_user = self.SMTP_USER.strip()
+            smtp_pass = self.SMTP_PASSWORD.strip()
+            if smtp_user == "" or smtp_pass == "":
+                raise ValueError("SMTP fallback credentials must be set in production")
+
         return self
 
 

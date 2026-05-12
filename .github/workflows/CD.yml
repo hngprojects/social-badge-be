@@ -8,12 +8,13 @@ on:
       - completed
 
 jobs:
-  deploy:
+  deploy-staging:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'staging' }}
+    environment: staging
 
     steps:
-      - name: Deploy to server
+      - name: Deploy to staging
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -23,7 +24,28 @@ jobs:
             export PATH="$HOME/.local/bin:$HOME/.local/share/pnpm:$PATH"
             source $HOME/.local/bin/env 2>/dev/null || true
             cd ~/social-badge-be
-            git pull origin ${{ github.event.workflow_run.head_branch }}
+            git pull origin staging
+            uv sync
+            uv run alembic upgrade head
+            pm2 restart social-badge-be
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    environment: production
+
+    steps:
+      - name: Deploy to production
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            export PATH="$HOME/.local/bin:$HOME/.local/share/pnpm:$PATH"
+            source $HOME/.local/bin/env 2>/dev/null || true
+            cd ~/social-badge-be
+            git pull origin main
             uv sync
             uv run alembic upgrade head
             pm2 restart social-badge-be

@@ -1,14 +1,20 @@
 import logging
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import (
+    NotTemplateOwnerError,
+    OrganiserTemplateNotFoundError,
     PlatformTemplateNotFoundError,
+    TemplateAlreadyPublishedError,
     TemplateInstanceForbiddenError,
     TemplateInstanceNotFoundError,
 )
+from app.core.slug import generate_share_slug
 from app.models import OrganiserTemplate, PlatformTemplate
 from app.services.cloudinary_service import delete_logo, upload_logo
 
@@ -50,6 +56,81 @@ async def create_template_instance(
         organizer_id,
     )
     return instance
+
+
+MAX_SLUG_RETRIES = 5
+
+
+async def publish_template(
+    session: AsyncSession,
+    organizer_id: UUID,
+    template_id: UUID,
+) -> OrganiserTemplate:
+    """Publish an organiser template.
+
+    Sets is_published=True, sets published_at, and generates a unique
+    share_slug if the template doesn't already have one. Idempotent on
+    slug: republishing keeps the same slug.
+    """
+    result = await session.execute(
+        select(OrganiserTemplate).where(OrganiserTemplate.id == template_id)
+    )
+    template = result.scalars().first()
+    if template is None or template.deleted_at is not None:
+        raise OrganiserTemplateNotFoundError
+    if template.organizer_id != organizer_id:
+        raise NotTemplateOwnerError
+    if template.is_published:
+        raise TemplateAlreadyPublishedError
+
+    template.is_published = True
+    template.published_at = datetime.now(UTC)
+
+    if template.share_slug is None:
+        for _ in range(MAX_SLUG_RETRIES):
+            template.share_slug = generate_share_slug()
+            try:
+                await session.flush()
+                break
+            except IntegrityError:
+                await session.rollback()
+                template.share_slug = None
+                continue
+        else:
+            raise RuntimeError("Could not generate a unique share slug")
+
+    await session.commit()
+    await session.refresh(template)
+
+    logger.info("Published template %s by organiser %s", template.id, organizer_id)
+    return template
+
+
+async def unpublish_template(
+    session: AsyncSession,
+    organizer_id: UUID,
+    template_id: UUID,
+) -> OrganiserTemplate:
+    """Unpublish an organiser template.
+
+    Sets is_published=False. The share_slug is preserved so re-publishing
+    later keeps the same URL.
+    """
+    result = await session.execute(
+        select(OrganiserTemplate).where(OrganiserTemplate.id == template_id)
+    )
+    template = result.scalars().first()
+    if template is None or template.deleted_at is not None:
+        raise OrganiserTemplateNotFoundError
+    if template.organizer_id != organizer_id:
+        raise NotTemplateOwnerError
+
+    template.is_published = False
+    await session.commit()
+    await session.refresh(template)
+
+    logger.info("Unpublished template %s by organiser %s", template.id, organizer_id)
+    return template
 
 
 async def upload_template_logo(

@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from app.db.session import AsyncSessionLocal
 from app.models import PlatformTemplate
+
 logger = logging.getLogger(__name__)
 
 

@@ -33,7 +33,9 @@ router = APIRouter()
                         "message": "Template instance created successfully.",
                         "data": {
                             "instance_id": "019e1b66-c4ec-7b80-8c85-84c2fe4f9c84",
-                            "platform_template_id": "019e1b66-c4ec-7b80-8c85-84c2fe4f9c00",
+                            "platform_template_id": (
+                                "019e1b66-c4ec-7b80-8c85-84c2fe4f9c00"
+                            ),
                             "organizer_id": "019e1b66-c4ec-7b80-8c85-84c2fe4f9c11",
                             "created_at": "2026-05-12T09:30:00Z",
                         },
@@ -67,6 +69,7 @@ async def create_instance(
             detail="Platform template not found.",
         ) from exc
 
+    assert instance.created_at is not None  # noqa: S101
     return SuccessResponse(
         message="Template instance created successfully.",
         data=TemplateInstanceResponse(
